@@ -36,6 +36,9 @@
 
 static int init_done = 0;
 
+/* flags */
+#define FLAG_STOP_WRITING 0x0001
+
 typedef struct ssl_context_t {
     SSL_CTX* ctx;
     SSL* ssl;
@@ -43,6 +46,7 @@ typedef struct ssl_context_t {
 
     apr_pool_t *pool;
 
+    const char *hostname;
     apr_socket_t *skt;
     apr_status_t bio_read_status;
 
@@ -51,6 +55,14 @@ typedef struct ssl_context_t {
     apr_size_t data_len;
     apr_size_t data_cur;
 
+    /* queue of incoming data */
+    
+    /* Next Protocol Negotiation */
+    const char *npn_data;
+    int npn_len;
+    apr_status_t npn_status;
+
+    int flags;
 } ssl_context_t;
 
 #if LOG
@@ -61,6 +73,7 @@ apps_ssl_info_callback(const SSL *s, int where, int ret)
     const char *str;
     int w;
     w = where & ~SSL_ST_MASK;
+
 
     if (w & SSL_ST_CONNECT)
         str = "SSL_connect";
@@ -215,8 +228,7 @@ ssl_socket_write(ssl_context_t *ssl_ctx, const char *data,
                 *len = 0;
                 sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt,
                                "ssl_socket_write want read\n");
-
-                return APR_EAGAIN;
+                return SSPDY_SSL_WANTS_READ;
             case SSL_ERROR_SSL:
             default:
                 *len = 0;
@@ -309,7 +321,7 @@ apr_status_t run_loop(ssl_context_t *ssl_ctx, apr_pool_t *pool)
     apr_status_t status;
 
     /* 10 seconds per loop */
-    apr_short_interval_time_t duration = APR_USEC_PER_SEC >> 10;
+    apr_short_interval_time_t duration = APR_USEC_PER_SEC * 10;
 
     STATUSERR(apr_pollset_create(&pollset, 32, pool, 0));
 
@@ -320,8 +332,11 @@ apr_status_t run_loop(ssl_context_t *ssl_ctx, apr_pool_t *pool)
         pfd.desc.s = ssl_ctx->skt;
         pfd.reqevents = APR_POLLIN;
 
-        if (ssl_ctx->data_cur < ssl_ctx->data_len)
+        if (ssl_ctx->data_cur < ssl_ctx->data_len &&
+            !ssl_ctx->flags & FLAG_STOP_WRITING) {
+
             pfd.reqevents |= APR_POLLOUT;
+        }
 
         status = apr_pollset_add(pollset, &pfd);
         if (status != APR_SUCCESS)
@@ -337,6 +352,8 @@ apr_status_t run_loop(ssl_context_t *ssl_ctx, apr_pool_t *pool)
             if (desc->rtnevents & APR_POLLIN) {
                 char data[16384];
                 apr_size_t len = 16384;
+
+                ssl_ctx->flags &= ~FLAG_STOP_WRITING;
 
                 status = ssl_socket_read(ssl_ctx, data, &len);
                 sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt,
@@ -357,6 +374,11 @@ apr_status_t run_loop(ssl_context_t *ssl_ctx, apr_pool_t *pool)
                     const char *ptr = ssl_ctx->data_out + ssl_ctx->data_cur;
 
                     status = ssl_socket_write(ssl_ctx, ptr, &len);
+                    if (status == SSPDY_SSL_WANTS_READ) {
+                        /* Stop writing until next read */
+                        ssl_ctx->flags |= FLAG_STOP_WRITING;
+                        status = APR_EAGAIN;
+                    }
                     if (SSPDY_READ_ERROR(status))
                         goto cleanup;
 
@@ -383,7 +405,53 @@ ignore_server_cert(int cert_valid, X509_STORE_CTX *store_ctx)
     return 1;
 }
 
-ssl_context_t *init_ssl(apr_pool_t *pool)
+static const char *
+construct_nextproto(const char *proto, apr_size_t len, apr_pool_t *pool)
+{
+    char *out = apr_palloc(pool, len + 1);
+
+    *out = len;
+    memcpy(out + 1, proto, len);
+
+    return out;
+}
+
+/*  */
+static int
+next_proto_cb(SSL *s, unsigned char **out, unsigned char *outlen,
+              const unsigned char *in, unsigned int inlen, void *arg)
+{
+    ssl_context_t *ssl_ctx = arg;
+    int i;
+
+    sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt,
+                   "NPN Protocols advertized by server:\n");
+    for (i = 0; i < inlen;) {
+        unsigned char strlen = in[i];
+        const unsigned char *str = &in[i+1];
+        sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt, "%.*s\n", strlen, str);
+        i += strlen + 1;
+    }
+
+    ssl_ctx->npn_status = SSL_select_next_proto(out, outlen, in, inlen,
+                                (const unsigned char*)ssl_ctx->npn_data,
+                                ssl_ctx->npn_len);
+    if (ssl_ctx->npn_status == OPENSSL_NPN_NEGOTIATED) {
+        sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt,
+                       "NPN Protocol %s negotiated, status %d\n",
+                       ssl_ctx->npn_data,
+                       ssl_ctx->npn_status);
+    } else if (ssl_ctx->npn_status == OPENSSL_NPN_NO_OVERLAP) {
+        sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt,
+                       "NPN Protocol %s not available, status %d\n",
+                       ssl_ctx->npn_data,
+                       ssl_ctx->npn_status);
+    }
+
+    return SSL_TLSEXT_ERR_OK;
+}
+
+ssl_context_t *init_ssl(apr_pool_t *pool, const char *proto)
 {
     ssl_context_t *ssl_ctx = apr_pcalloc(pool, sizeof(*ssl_ctx));
     ssl_ctx->pool = pool;
@@ -400,9 +468,22 @@ ssl_context_t *init_ssl(apr_pool_t *pool)
     }
 
     /* Setup context */
-    ssl_ctx->ctx = SSL_CTX_new(SSLv23_client_method());
+    /* NPN requires TLSv1_client_method() */
+    ssl_ctx->ctx = SSL_CTX_new(TLSv1_client_method());
     SSL_CTX_set_verify(ssl_ctx->ctx, SSL_VERIFY_PEER, ignore_server_cert);
     SSL_CTX_set_options(ssl_ctx->ctx, SSL_OP_ALL);
+
+#if LOG
+    SSL_CTX_set_info_callback(ssl_ctx->ctx, apps_ssl_info_callback);
+#endif
+
+    /* Setup spdy negotiation */
+#if OPENSSL_VERSION_NUMBER >= 0x10001000L && !defined(OPENSSL_NO_TLSEXT) && \
+!defined(OPENSSL_NO_NEXTPROTONEG)
+    SSL_CTX_set_next_proto_select_cb(ssl_ctx->ctx, next_proto_cb, ssl_ctx);
+    ssl_ctx->npn_len = strlen(proto);
+    ssl_ctx->npn_data = construct_nextproto(proto, ssl_ctx->npn_len, pool);
+#endif
 
     ssl_ctx->bio = BIO_new(&bio_apr_socket_method);
     ssl_ctx->bio->ptr = ssl_ctx;
@@ -413,10 +494,7 @@ ssl_context_t *init_ssl(apr_pool_t *pool)
     SSL_set_bio(ssl_ctx->ssl, ssl_ctx->bio, ssl_ctx->bio);
     SSL_set_connect_state(ssl_ctx->ssl);
     SSL_set_app_data(ssl_ctx->ssl, ssl_ctx);
-
-#if LOG
-    SSL_CTX_set_info_callback(ssl_ctx->ctx, apps_ssl_info_callback);
-#endif
+    SSL_set_tlsext_host_name(ssl_ctx->ssl, ssl_ctx->hostname);
 
     return ssl_ctx;
 }
@@ -442,7 +520,7 @@ int main(void)
     apr_pool_create(&global_pool, NULL);
     apr_pool_create(&pool, global_pool);
 
-    ssl_ctx = init_ssl(pool);
+    ssl_ctx = init_ssl(pool, "spdy/3");
 
     (void)apr_uri_parse(pool, url, &uri);
 
@@ -454,11 +532,15 @@ int main(void)
     ssl_ctx->data_out = REQ;
     ssl_ctx->data_len = strlen(REQ);
     ssl_ctx->data_cur = 0;
+    ssl_ctx->hostname = uri.hostname;
 
     while (1) {
         status = run_loop(ssl_ctx, pool);
-        if (SSPDY_READ_ERROR(status))
+        if (!APR_STATUS_IS_TIMEUP(status) &&
+             SSPDY_READ_ERROR(status)) {
+            printf("\nFinish loop %d\n", status);
             goto cleanup;
+        }
         printf(".");
     };
 cleanup:
