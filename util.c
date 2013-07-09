@@ -91,3 +91,108 @@ void sspdy__log_skt(int verbose_flag, const char *filename, apr_socket_t *skt,
         va_end(argp);
     }
 }
+
+
+apr_status_t sspdy_stream_read(sspdy_stream_t *stream, apr_size_t requested,
+                               const char **data, apr_size_t *len)
+{
+    return stream->type->read(stream, requested, data, len);
+}
+
+apr_status_t sspdy_stream_write(sspdy_stream_t *stream, const char *data,
+                                apr_size_t *len)
+{
+    return stream->type->write(stream, data, len);
+}
+
+typedef struct sspdy_buf_stream_ctx_t
+{
+    readfunc_t read;
+    writefunc_t write;
+    apr_pool_t *pool;
+    void *baton;
+
+    char *in_data;
+    apr_size_t remaining;
+
+    char *out_data;
+    apr_size_t available;
+} sspdy_buf_stream_ctx_t;
+
+apr_status_t
+sspdy_create_buf_stream(sspdy_stream_t **stream,
+                        readfunc_t read, writefunc_t write,
+                        void *baton,
+                        apr_pool_t *pool)
+{
+    sspdy_buf_stream_ctx_t *ctx;
+
+    ctx = apr_pcalloc(pool, sizeof(sspdy_buf_stream_ctx_t));
+    ctx->read = read;
+    ctx->write = write;
+    ctx->baton = baton;
+    ctx->pool = pool;
+
+    *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
+    (*stream)->type = &sspdy_stream_type_buffered;
+    (*stream)->data = ctx;
+
+    return APR_SUCCESS;
+}
+
+apr_status_t sspdy_buf_read(sspdy_stream_t *stream, apr_size_t requested,
+                            const char **data, apr_size_t *len)
+{
+    char buf[16384];
+    apr_size_t bufsize = 16384;
+    sspdy_buf_stream_ctx_t *ctx = stream->data;
+    apr_status_t status;
+
+    if (!ctx->remaining) {
+        status = ctx->read(ctx->baton, buf, &bufsize);
+
+        if (bufsize) {
+            ctx->in_data = apr_palloc(ctx->pool, bufsize);
+            memcpy(ctx->in_data, buf, bufsize);
+            ctx->remaining = bufsize;
+        }
+    }
+
+    if (ctx->remaining) {
+        *data = ctx->in_data;
+        if (requested <= ctx->remaining) {
+            ctx->in_data += requested;
+            *len = requested;
+            ctx->remaining -= requested;
+            return APR_SUCCESS;
+        } else {
+            ctx->in_data += ctx->remaining;
+            *len = ctx->remaining;
+            ctx->remaining = 0;
+            return APR_EAGAIN;
+        }
+    } else {
+        *len = 0;
+    }
+
+    return status;
+}
+
+apr_status_t sspdy_buf_write(sspdy_stream_t *stream,
+                             const char *data, apr_size_t *len)
+{
+    sspdy_buf_stream_ctx_t *ctx = stream->data;
+    apr_status_t status;
+
+    status = ctx->write(ctx->baton, data, len);
+
+    /* TODO: buffer data */
+
+    return status;
+}
+
+const sspdy_stream_type_t sspdy_stream_type_buffered = {
+    "SOCKET",
+    sspdy_buf_read,
+    sspdy_buf_write,
+};

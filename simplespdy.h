@@ -13,6 +13,17 @@
  * limitations under the License.
  */
 
+#include <apr.h>
+#include <apr_pools.h>
+#include <apr_uri.h>
+
+
+#define LOG 1
+
+#define STATUSERR(x) if ((status = (x))) return status;
+
+
+
 static void log_time();
 void sspdy__log(int verbose_flag, const char *filename, const char *fmt, ...);
 void sspdy__log_skt(int verbose_flag, const char *filename, apr_socket_t *skt,
@@ -31,3 +42,55 @@ void sspdy__log_nopref(int verbose_flag, const char *fmt, ...);
                                  && !APR_STATUS_IS_EOF(status) \
                                  && !APR_STATUS_IS_EAGAIN(status) \
                                  && (status != SSPDY_SSL_WANTS_READ))
+
+typedef struct ssl_context_t ssl_context_t;
+
+ssl_context_t *init_ssl(apr_pool_t *pool, const char *proto,
+                        apr_socket_t *skt, const char *hostname);
+
+
+typedef struct sspdy_stream_type_t sspdy_stream_type_t;
+
+typedef struct sspdy_stream_t {
+    /** the type of this stream */
+    const sspdy_stream_type_t *type;
+
+    /** private data */
+    void *data;
+} sspdy_stream_t;
+
+struct sspdy_stream_type_t {
+    const char *name;
+
+    apr_status_t (*read)(sspdy_stream_t *stream, apr_size_t requested,
+                         const char **data, apr_size_t *len);
+
+    apr_status_t (*write)(sspdy_stream_t *stream, const char *data,
+                          apr_size_t *len);
+
+    void (*destroy)(sspdy_stream_t *stream);
+};
+
+apr_status_t sspdy_stream_read(sspdy_stream_t *stream, apr_size_t requested,
+                               const char **data, apr_size_t *len);
+apr_status_t sspdy_stream_write(sspdy_stream_t *stream, const char *data,
+                                apr_size_t *len);
+
+extern const sspdy_stream_type_t sspdy_stream_type_buffered;
+
+typedef apr_status_t (*readfunc_t)(void *baton, char *data, apr_size_t *len);
+
+typedef apr_status_t (*writefunc_t)(void *baton, const char *data,
+apr_size_t *len);
+
+apr_status_t
+sspdy_create_buf_stream(sspdy_stream_t **stream,
+                        readfunc_t read, writefunc_t write, void *baton,
+                        apr_pool_t *pool);
+
+
+apr_status_t
+ssl_socket_read(void *baton, char *data, apr_size_t *len);
+
+apr_status_t
+ssl_socket_write(void *baton, const char *data, apr_size_t *len);

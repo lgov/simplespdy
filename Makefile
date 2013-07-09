@@ -8,7 +8,7 @@ INC_PATHS=-I/opt/local/include/apr-1 -I/opt/local/include
 
 LIBS=-lapr-1 -laprutil-1 -lssl -lcrypto
 
-OBJS=$(addprefix $(OBJDIR)/, simplespdy.o util.o)
+OBJS=$(addprefix $(OBJDIR)/, simplespdy.o util.o ssl.o spdyclient.o)
 OBJDIR=build
 
 simplespdy.o: $(OBJS)
@@ -19,6 +19,8 @@ $(OBJDIR)/%.o : %.c
 
 simplespdy.c : simplespdy.h
 util.c : simplespdy.h
+ssl.c : simplespdy.h
+spdyclient.c : simplespdy.h
 
 clean:
 		rm -f simplespdy build/simplespdy.o build/util.o
