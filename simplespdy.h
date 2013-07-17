@@ -20,9 +20,7 @@
 
 #define LOG 1
 
-#define STATUSERR(x) if ((status = (x))) return status;
-
-
+typedef struct sspdy_config_store_t sspdy_config_store_t;
 
 static void log_time();
 void sspdy__log(int verbose_flag, const char *filename, const char *fmt, ...);
@@ -37,11 +35,19 @@ void sspdy__log_nopref(int verbose_flag, const char *fmt, ...);
 /* Stop writing until more data is read. */
 #define SSPDY_SSL_WANTS_READ (SSPDY_ERROR_START + 1)
 
+/* Stop creating new streams on this connection. */
+#define SSPDY_SPDY_MAXIMUM_STREAMID (SSPDY_ERROR_START + 2)
+
 
 #define SSPDY_READ_ERROR(status) ((status) \
                                  && !APR_STATUS_IS_EOF(status) \
                                  && !APR_STATUS_IS_EAGAIN(status) \
                                  && (status != SSPDY_SSL_WANTS_READ))
+
+#define STATUSERR(x) if ((status = (x))) return status;
+
+#define STATUSREADERR(x) if (((status = (x)) && SSPDY_READ_ERROR(status)))\
+                           return status;
 
 typedef struct ssl_context_t ssl_context_t;
 
@@ -76,6 +82,7 @@ apr_status_t sspdy_stream_read(sspdy_stream_t *stream, apr_size_t requested,
 apr_status_t sspdy_stream_write(sspdy_stream_t *stream, const char *data,
                                 apr_size_t *len);
 
+/* Buffered stream */
 extern const sspdy_stream_type_t sspdy_stream_type_buffered;
 
 typedef apr_status_t (*readfunc_t)(void *baton, char *data, apr_size_t *len);
@@ -88,9 +95,36 @@ sspdy_create_buf_stream(sspdy_stream_t **stream,
                         readfunc_t read, writefunc_t write, void *baton,
                         apr_pool_t *pool);
 
+/* SPDY protocol stream */
+apr_status_t sspdy_create_spdy_proto_stream(sspdy_config_store_t *,
+                                            sspdy_stream_t **stream,
+                                            sspdy_stream_t *wrapped,
+                                            apr_pool_t *pool);
+
+extern const sspdy_stream_type_t sspdy_stream_type_spdy_proto;
+
 
 apr_status_t
 ssl_socket_read(void *baton, char *data, apr_size_t *len);
 
 apr_status_t
 ssl_socket_write(void *baton, const char *data, apr_size_t *len);
+
+typedef struct sspdy_general_config_store_t {
+
+} sspdy_general_config_store_t;
+
+struct sspdy_config_store_t {
+    sspdy_general_config_store_t *general_config_store;
+};
+
+apr_status_t
+create_general_config_store(sspdy_general_config_store_t **config_store,
+                            apr_pool_t *pool);
+
+apr_status_t
+create_config_store(sspdy_config_store_t **config_store,
+                    sspdy_general_config_store_t *general_config_store,
+                    apr_pool_t *pool);
+
+apr_status_t store_config_for_connection(apr_pool_t *pool);

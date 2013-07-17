@@ -31,6 +31,9 @@ typedef struct sspdy_context_t
 {
     apr_pool_t *pool;
 
+    sspdy_general_config_store_t *general_config_store;
+    sspdy_config_store_t *config_store;
+
     const char *hostname;
     apr_socket_t *skt;
 
@@ -91,7 +94,7 @@ apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
 
         pfd.desc_type = APR_POLL_SOCKET;
         pfd.desc.s = sspdy_ctx->skt;
-        pfd.reqevents = APR_POLLIN;
+        pfd.reqevents = APR_POLLIN | APR_POLLHUP | APR_POLLERR;
 
         if (sspdy_ctx->data_cur < sspdy_ctx->data_len &&
             !sspdy_ctx->flags & FLAG_STOP_WRITING) {
@@ -116,18 +119,23 @@ apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
 
                 sspdy_ctx->flags &= ~FLAG_STOP_WRITING;
 
-                status = sspdy_stream_read(sspdy_ctx->stream, 100000, &data,
-                                           &len);
-                sspdy__log_skt(LOG, __FILE__, sspdy_ctx->skt,
-                               "ssl_socket_read with status %d, len %d\n",
-                               status, len);
-                if (SSPDY_READ_ERROR(status))
-                    goto cleanup;
-
-                if (len)
+                while (1) {
+                    status = sspdy_stream_read(sspdy_ctx->stream, 100000, &data,
+                                               &len);
                     sspdy__log_skt(LOG, __FILE__, sspdy_ctx->skt,
-                                   "read data of length %d:\n%.*s\n",
-                                   len, len, data);
+                                   "ssl_socket_read with status %d, len %d\n",
+                                   status, len);
+                    if (SSPDY_READ_ERROR(status))
+                        goto cleanup;
+
+                    if (len)
+                        sspdy__log_skt(LOG, __FILE__, sspdy_ctx->skt,
+                                       "read data of length %d:\n%.*s\n",
+                                       len, len, data);
+
+                    if (status == APR_EAGAIN)
+                        break;
+                };
             }
             if (desc->rtnevents & APR_POLLOUT) {
 
@@ -152,6 +160,12 @@ apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
                     }
                 }
             }
+            if (desc->rtnevents & APR_POLLHUP ||
+                desc->rtnevents & APR_POLLERR) {
+
+                sspdy__log(LOG, __FILE__, "Reset event\n");
+            }
+
         }
     }
 
@@ -161,16 +175,32 @@ cleanup:
     return status;
 }
 
+apr_status_t init_sspdy_context(sspdy_context_t **sspdy_ctx, apr_pool_t *pool)
+{
+    apr_status_t status;
+
+    sspdy_context_t *ctx = apr_pcalloc(pool, sizeof(sspdy_context_t));
+
+    STATUSERR(apr_pool_create(&ctx->pool, pool));
+
+    STATUSERR(create_config_store(&ctx->config_store, ctx->general_config_store,
+                                  ctx->pool));
+
+    *sspdy_ctx = ctx;
+
+    return APR_SUCCESS;
+}
+
 #define CRLF "\r\n"
 
 #define REQ "GET / HTTP/1.1" CRLF \
-            "Host: lgo-ubuntu.dev:443" CRLF CRLF
+            "Host: lgo-ubuntu1:443" CRLF CRLF
 
 int main(void)
 {
     apr_pool_t *global_pool, *pool;
     apr_uri_t uri;
-    const char *url = "https://lgo-ubuntu.dev/";
+    const char *url = "https://lgo-ubuntu1";
     sspdy_context_t *sspdy_ctx;
     ssl_context_t *ssl_ctx;
     sspdy_stream_t *skt_stream;
@@ -190,7 +220,7 @@ int main(void)
         uri.port = apr_uri_port_of_scheme(uri.scheme);
     }
 
-    sspdy_ctx = apr_pcalloc(pool, sizeof(sspdy_context_t));
+    STATUSERR(init_sspdy_context(&sspdy_ctx, pool));
 
     STATUSERR(sspdy_connect(sspdy_ctx, uri.hostname, uri.port, pool));
 
@@ -204,6 +234,10 @@ int main(void)
                                       ssl_socket_write, ssl_ctx,
                                       pool));
 
+    STATUSERR(sspdy_create_spdy_proto_stream(sspdy_ctx->config_store,
+                                             &sspdy_ctx->stream,
+                                             sspdy_ctx->stream,
+                                             pool));
     while (1) {
         status = run_loop(sspdy_ctx, pool);
         if (!APR_STATUS_IS_TIMEUP(status) &&

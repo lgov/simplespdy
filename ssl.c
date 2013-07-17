@@ -130,6 +130,9 @@ static int bio_apr_socket_read(BIO *bio, char *in, int inlen)
 
     status = apr_socket_recv(ssl_ctx->skt, in, &len);
     ssl_ctx->bio_read_status = status;
+    sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt,
+                   "bio_apr_socket_read read %d bytes with status %d\n", len,
+                   status);
 
     if (APR_STATUS_IS_EAGAIN(status)) {
         BIO_set_retry_read(bio);
