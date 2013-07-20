@@ -304,8 +304,18 @@ decompressbuf(const char **data, apr_size_t *len,
 
         available = z_ctx->zinstr.avail_out;
         zerr = inflate(&z_ctx->zinstr, Z_SYNC_FLUSH);
-        if (zerr < 0)
-            return APR_EGENERAL;
+
+        if (zerr != Z_OK && zerr != Z_STREAM_END) {
+            switch (zerr) {
+                case Z_NEED_DICT:
+                    inflateSetDictionary(&z_ctx->zinstr,
+                                         (const Bytef *)SPDY_dictionary_txt,
+                                         sizeof(SPDY_dictionary_txt));
+                    break;
+                default:
+                    return APR_EGENERAL;
+            }
+        }
 
         deflated = available - z_ctx->zinstr.avail_out;
         z_ctx->zinstr.next_out += deflated;

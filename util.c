@@ -92,6 +92,24 @@ void sspdy__log_skt(int verbose_flag, const char *filename, apr_socket_t *skt,
     }
 }
 
+apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
+                                        const char *data, apr_size_t len)
+{
+    return proto->type->data_available(proto, data, len);
+}
+
+apr_status_t sspdy_proto_new_request(sspdy_protocol_t *proto,
+                                     sspdy_setup_request_t setup_request,
+                                     void *setup_baton)
+{
+    return proto->type->new_request(proto, setup_request, setup_baton);
+}
+
+apr_status_t sspdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
+                              const char **data, apr_size_t *len)
+{
+    return proto->type->read(proto, requested, data, len);
+}
 
 apr_status_t sspdy_stream_read(sspdy_stream_t *stream, apr_size_t requested,
                                const char **data, apr_size_t *len)
@@ -116,6 +134,7 @@ typedef struct sspdy_buf_stream_ctx_t
     apr_size_t remaining;
 
     char *out_data;
+    apr_size_t *out_cur_pos;
     apr_size_t available;
 } sspdy_buf_stream_ctx_t;
 
@@ -179,25 +198,41 @@ apr_status_t sspdy_buf_read(sspdy_stream_t *stream, apr_size_t requested,
 }
 
 apr_status_t sspdy_buf_write(sspdy_stream_t *stream,
-                             const char *data, apr_size_t *len)
+                             const char *data, apr_size_t *new_len)
 {
     sspdy_buf_stream_ctx_t *ctx = stream->data;
-    apr_size_t written;
+    apr_size_t len;
     apr_status_t status;
 
     if (ctx->available) {
-        written = ctx->available
-        status = ctx->write(ctx->baton, ctx->out_data, &written);
+        len = ctx->available;
+        STATUSREADERR(ctx->write(ctx->baton, ctx->out_data, &len));
+
+        if (len < ctx->available) {
+            ctx->available -= len;
+            ctx->out_cur_pos += len;
+        } else {
+            ctx->available = 0;
+            ctx->out_cur_pos = 0;
+        }
+
+        /* ignore new data for now */
+        return status;
     }
 
-        ctx->write(ctx->baton, data, &written);
+    if (*new_len) {
+        len = *new_len;
+        status = ctx->write(ctx->baton, data, &len);
 
-    if (written < *len) {
-        ctx->available = *len - written;
-        out_data = apr_palloc(ctx->pool, ctx->available);
-        memcpy(out_data, data + written, ctx->available);
+        if (len < *new_len) {
+            ctx->available = *new_len - len;
+            ctx->out_data = apr_palloc(ctx->pool, ctx->available);
+            memcpy(ctx->out_data, data + len, ctx->available);
+        }
+    } else {
+        /* nothing to write anymore */
+        return APR_EOF;
     }
-    /* TODO: buffer data */
 
     return status;
 }

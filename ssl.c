@@ -230,6 +230,9 @@ ssl_socket_read(void *baton, char *data, apr_size_t *len)
 
     result = SSL_read(ssl_ctx->ssl, data, *len);
     if (result > 0) {
+        sspdy__log_skt(LOG, __FILE__, ssl_ctx->skt,
+                       "ssl_socket_read read %d bytes, bio status: %d\n",
+                       result, ssl_ctx->bio_read_status);
         *len = result;
         return APR_SUCCESS;
     } else {
