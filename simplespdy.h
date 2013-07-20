@@ -38,6 +38,7 @@ void sspdy__log_nopref(int verbose_flag, const char *fmt, ...);
 /* Stop creating new streams on this connection. */
 #define SSPDY_SPDY_MAXIMUM_STREAMID (SSPDY_ERROR_START + 2)
 
+#define SSPDY_SPDY_PROTOCOL_ERROR (SSPDY_ERROR_START + 3)
 
 #define SSPDY_READ_ERROR(status) ((status) \
                                  && !APR_STATUS_IS_EOF(status) \
@@ -128,3 +129,24 @@ create_config_store(sspdy_config_store_t **config_store,
                     apr_pool_t *pool);
 
 apr_status_t store_config_for_connection(apr_pool_t *pool);
+
+/* ZLib compression */
+typedef struct compress_ctx_t compress_ctx_t;
+
+apr_status_t
+init_compression(compress_ctx_t **z_ctx, apr_pool_t *pool);
+
+apr_status_t compressbuf(const char **data, apr_size_t *len,
+                         compress_ctx_t *z_ctx,
+                         const char* orig, apr_size_t orig_len,
+                         apr_pool_t *pool);
+
+apr_status_t decompressbuf(const char **data, apr_size_t *len,
+                           compress_ctx_t *z_ctx,
+                           const char* orig, apr_size_t orig_len,
+                           apr_pool_t *pool);
+
+apr_status_t test(sspdy_stream_t *stream, apr_pool_t *pool);
+
+apr_status_t
+init_compression(compress_ctx_t **z_ctx, apr_pool_t *pool);

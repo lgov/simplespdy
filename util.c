@@ -182,10 +182,21 @@ apr_status_t sspdy_buf_write(sspdy_stream_t *stream,
                              const char *data, apr_size_t *len)
 {
     sspdy_buf_stream_ctx_t *ctx = stream->data;
+    apr_size_t written;
     apr_status_t status;
 
-    status = ctx->write(ctx->baton, data, len);
+    if (ctx->available) {
+        written = ctx->available
+        status = ctx->write(ctx->baton, ctx->out_data, &written);
+    }
 
+        ctx->write(ctx->baton, data, &written);
+
+    if (written < *len) {
+        ctx->available = *len - written;
+        out_data = apr_palloc(ctx->pool, ctx->available);
+        memcpy(out_data, data + written, ctx->available);
+    }
     /* TODO: buffer data */
 
     return status;

@@ -195,6 +195,31 @@ apr_status_t init_sspdy_context(sspdy_context_t **sspdy_ctx, apr_pool_t *pool)
 
 #define REQ "GET / HTTP/1.1" CRLF \
             "Host: lgo-ubuntu1:443" CRLF CRLF
+#if 0
+int main(void)
+{
+    apr_pool_t *global_pool, *pool;
+    sspdy_context_t *sspdy_ctx;
+    apr_status_t status;
+
+    /* Initialize the Apache portable runtime library. */
+    apr_initialize();
+    atexit(apr_terminate);
+
+    apr_pool_create(&global_pool, NULL);
+    apr_pool_create(&pool, global_pool);
+
+    STATUSERR(init_sspdy_context(&sspdy_ctx, pool));
+
+    STATUSERR(sspdy_create_spdy_proto_stream(sspdy_ctx->config_store,
+                                             &sspdy_ctx->stream,
+                                             sspdy_ctx->stream,
+                                             pool));
+    test(sspdy_ctx->stream, pool);
+
+    return 0;
+}
+#endif
 
 int main(void)
 {

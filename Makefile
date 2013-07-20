@@ -6,9 +6,10 @@ CFLAGS=-g
 LIB_PATHS=-L/opt/local/lib -L/usr/local/lib
 INC_PATHS=-I/opt/local/include/apr-1 -I/opt/local/include
 
-LIBS=-lapr-1 -laprutil-1 -lssl -lcrypto
+LIBS=-lapr-1 -laprutil-1 -lssl -lcrypto -lz
 
-OBJS=$(addprefix $(OBJDIR)/, simplespdy.o util.o ssl.o config_store.o spdyclient.o)
+OBJS=$(addprefix $(OBJDIR)/, simplespdy.o util.o ssl.o config_store.o\
+                             spdyclient.o spdycompress.o)
 OBJDIR=build
 
 simplespdy.o: $(OBJS)
