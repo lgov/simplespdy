@@ -14,88 +14,15 @@
  */
 
 #include "simplespdy.h"
+#include "spdy_protocol.h"
+#include "protocols.h"
+#include "config_store.h"
 
 #include <apr_hash.h>
 
 #define BUFSIZE 1048576
 #define SPDY_FRAME_SIZE 0xffffff
 
-typedef struct spdy_frame_hdr_t {
-    apr_byte_t control;
-    apr_byte_t flags;
-    apr_uint32_t length;
-    union {
-        struct { /* control frame only */
-            apr_uint16_t version;
-            apr_uint16_t type;
-        } ctrl;
-        struct { /* data frame only */
-            apr_uint32_t streamid;
-        } data;
-    };
-} spdy_frame_hdr_t;
-
-/* A large frame can probably not be read in one move, so we have to keep track
-   of where we are. */
-typedef enum {
-    SPDY_FRAME_INIT,
-    SPDY_FRAME_INPROGRESS,
-    SPDY_FRAME_FINISHED,
-} frame_read_state_t;
-
-typedef struct sspdy_settings_frame_t {
-    spdy_frame_hdr_t hdr;
-
-    apr_uint32_t nr_of_entries;
-
-    frame_read_state_t state;
-
-} sspdy_settings_frame_t;
-
-typedef struct sspdy_rst_stream_frame_t {
-    spdy_frame_hdr_t hdr;
-
-    apr_uint32_t status_code;
-
-    frame_read_state_t state;
-
-} sspdy_rst_stream_frame_t;
-
-typedef struct sspdy_syn_reply_frame_t {
-    spdy_frame_hdr_t hdr;
-
-    apr_uint32_t streamid;
-
-    frame_read_state_t state;
-
-} sspdy_syn_reply_frame_t;
-
-typedef struct sspdy_goaway_frame_t {
-    spdy_frame_hdr_t hdr;
-
-    apr_uint32_t last_good_streamid;
-
-    apr_uint32_t status_code;
-
-    frame_read_state_t state;
-
-} sspdy_goaway_frame_t;
-
-
-#define READ_INT32(p, val)\
-            val = ((const unsigned char)*p++ << 24) +\
-                  ((const unsigned char)*p++ << 16) +\
-                  ((const unsigned char)*p++ << 8)  +\
-                   (const unsigned char)*p++;
-#define READ_INT24(p, val)\
-            val = ((const unsigned char)*p++ << 16) +\
-                  ((const unsigned char)*p++ << 8)  +\
-                   (const unsigned char)*p++;
-#define READ_INT16(p, val)\
-            val = ((const unsigned char)*p++ << 8)  +\
-                   (const unsigned char)*p++;
-#define READ_INT8(p, val)\
-            val = (const unsigned char)*p++;
 
 /* Read and consume REQUESTED nr of bytes. If the amount is not available,
  0 bytes are consumed. */
@@ -112,7 +39,8 @@ read_exact(spdy_proto_ctx_t *ctx, apr_size_t requested, const char **data)
     } else
         return APR_EGENERAL;
 
-    if (ctx->in_cur_pos == ctx->vec[ctx->in_iov_pos].iov_len) {
+    if (ctx->vec[ctx->in_iov_pos].iov_len &&
+        ctx->in_cur_pos == ctx->vec[ctx->in_iov_pos].iov_len) {
 
         ctx->in_iov_pos++;
         ctx->in_cur_pos = 0;
@@ -219,15 +147,6 @@ create_ctrl_frame_of_type(apr_uint16_t type,
     return hdr;
 }
 
-
-typedef struct sspdy_data_frame_t {
-    spdy_frame_hdr_t hdr;
-
-    frame_read_state_t state;
-
-} sspdy_data_frame_t;
-
-
 static spdy_frame_hdr_t *
 create_data_frame(apr_pool_t *pool)
 {
@@ -283,7 +202,7 @@ read_spdy_frame_hdr(spdy_frame_hdr_t **hdr, spdy_proto_ctx_t *ctx,
                    frame->ctrl.version, frame->ctrl.type, frame->flags,
                    frame->length);
     else
-        sspdy__log(LOG, __FILE__, "spdy data frame. id:%d, "
+        sspdy__log(LOG, __FILE__, "spdy data frame. streamid:0x%x, "
                        "flags:%d, length:%d\n", frame->data.streamid,
                        frame->flags, frame->length);
 
@@ -483,29 +402,6 @@ read_spdy_frame(apr_size_t *remaining,
     return APR_SUCCESS;
 }
 
-apr_status_t
-sspdy_create_spdy_protocol(sspdy_protocol_t **proto,
-                           sspdy_config_store_t *config_store,
-                           apr_pool_t *pool)
-{
-    spdy_proto_ctx_t *ctx;
-    apr_status_t status;
-
-    ctx = apr_pcalloc(pool, sizeof(spdy_proto_ctx_t));
-    ctx->pool = pool;
-    ctx->config_store = config_store;
-    ctx->streamid = 1; /* odd number for client-initiated streams */
-    ctx->frame_buf = apr_palloc(pool, SPDY_FRAME_SIZE);
-
-    STATUSERR(init_compression(&ctx->z_ctx, ctx->pool));
-
-    *proto = apr_palloc(pool, sizeof(sspdy_protocol_t));
-    (*proto)->type = &sspdy_protocol_type_spdy;
-    (*proto)->data = ctx;
-
-    return APR_SUCCESS;
-}
-
 #if 0
 /* Ensure that the buffer contains REQUESTED # of bytes, are as close as
    possible. */
@@ -546,6 +442,108 @@ ensure_bytes(spdy_proto_ctx_t *ctx, sspdy_stream_t *wrapped,
 apr_status_t compact_and_copy(sspdy_protocol_t *proto)
 {
     return APR_SUCCESS;
+}
+
+
+#if 0
+apr_status_t test(sspdy_stream_t *stream, apr_pool_t *pool)
+{
+    const char *data;
+    apr_uint32_t len;
+    spdy_frame_hdr_t *hdr;
+    const char syn_reply_hdr[] = { 0x80, 0x03, 0x00, 0x02, 0x00, 0x00,
+        0x00, 0xff, 0x00, 0x00, 0x00, 0x02 };
+    apr_status_t status;
+
+    spdy_proto_ctx_t *ctx = stream->data;
+
+    STATUSERR(create_compressed_header_block(ctx, &data, &len, pool));
+
+    ctx->vec[0].iov_base = (void *)syn_reply_hdr;
+    ctx->vec[0].iov_len = 12;
+    ctx->vec_len = 1;
+    ctx->available = ctx->vec[0].iov_len;
+
+    STATUSERR(read_spdy_frame_hdr(&hdr, ctx, ctx->pool));
+
+    ctx->vec[0].iov_base = (void *)data;
+    ctx->vec[0].iov_len = len;
+    ctx->vec_len = 1;
+    ctx->available = ctx->vec[0].iov_len;
+    ctx->in_cur_pos = 0;
+    hdr->length = len;
+
+    STATUSERR(read_compressed_header_block(ctx, hdr, pool));
+
+    return APR_SUCCESS;
+}
+#endif
+
+apr_status_t
+sspdy_create_spdy_tls_protocol(sspdy_protocol_t **proto,
+                               sspdy_config_store_t *config_store,
+                               apr_pool_t *pool)
+{
+    spdy_proto_ctx_t *ctx;
+    apr_status_t status;
+
+    ctx = apr_pcalloc(pool, sizeof(spdy_proto_ctx_t));
+    ctx->pool = pool;
+    ctx->config_store = config_store;
+    ctx->streamid = 1; /* odd number for client-initiated streams */
+    ctx->frame_buf = apr_palloc(pool, SPDY_FRAME_SIZE);
+
+    STATUSERR(init_compression(&ctx->z_ctx, ctx->pool));
+
+    *proto = apr_palloc(pool, sizeof(sspdy_protocol_t));
+    (*proto)->type = &sspdy_protocol_type_spdy;
+    (*proto)->data = ctx;
+
+    return APR_SUCCESS;
+}
+
+apr_status_t sspdy_spdy_proto_queue_request(sspdy_protocol_t *proto,
+                                            sspdy_setup_request_t setup_request,
+                                            void *setup_baton)
+{
+    spdy_proto_ctx_t *ctx = proto->data;
+
+    spdy_request_t *req = apr_palloc(ctx->pool, sizeof(spdy_request_t));
+    req->setup_baton = setup_baton;
+    req->setup_request = setup_request;
+
+    /* Add to queue */
+    ctx->req = req;
+
+    return APR_SUCCESS;
+}
+
+static apr_status_t
+sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
+                      const char **data, apr_size_t *len)
+{
+    spdy_proto_ctx_t *ctx = proto->data;
+    sspdy_stream_t *syn_stream;
+    apr_status_t status;
+
+    if (ctx->req) {
+        ctx->req->setup_request(ctx->req->setup_baton, data, len);
+        ctx->req = NULL;
+
+        /* create a SYN_STREAM frame */
+        STATUSERR(sspdy_create_spdy_out_syn_stream(&syn_stream, ctx,
+                                                   NULL, ctx->pool));
+        /* create a DATA frame */
+
+
+        status = sspdy_stream_read(syn_stream, requested, data, len);
+
+        return status;
+    }
+
+    *len = 0;
+
+    return APR_EOF;
 }
 
 apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
@@ -591,94 +589,16 @@ apr_status_t sspdy_spdy_proto_write(sspdy_stream_t *stream,
 {
     spdy_proto_ctx_t *ctx = stream->data;
     apr_status_t status;
-
+    
     STATUSERR(write_spdy_data_frame(ctx, data, len, ctx->pool));
-
+    
     return status;
 }
 #endif
 
-apr_status_t sspdy_spdy_proto_new_request(sspdy_protocol_t *proto,
-                                          sspdy_setup_request_t setup_request,
-                                          void *setup_baton)
-{
-    spdy_proto_ctx_t *ctx = proto->data;
-
-    spdy_request_t *req = apr_palloc(ctx->pool, sizeof(spdy_request_t));
-    req->setup_baton = setup_baton;
-    req->setup_request = setup_request;
-
-    /* Add to queue */
-    ctx->req = req;
-
-    return APR_SUCCESS;
-}
-
-static apr_status_t
-sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
-                      const char **data, apr_size_t *len)
-{
-    spdy_proto_ctx_t *ctx = proto->data;
-    sspdy_stream_t *syn_stream;
-    apr_status_t status;
-
-    if (ctx->req) {
-        ctx->req->setup_request(ctx->req->setup_baton, data, len);
-        ctx->req = NULL;
-
-        /* create a SYN_STREAM frame */
-        STATUSERR(sspdy_create_spdy_out_syn_stream(&syn_stream, ctx,
-                                                   NULL, ctx->pool));
-        /* create a DATA frame */
-
-
-        status = sspdy_stream_read(syn_stream, requested, data, len);
-
-        return status;
-    }
-
-    *len = 0;
-
-    return APR_EOF;
-}
-
 const sspdy_protocol_type_t sspdy_protocol_type_spdy = {
     "SPDYPROTO",
     sspdy_spdy_proto_data_available,
-    sspdy_spdy_proto_new_request,
+    sspdy_spdy_proto_queue_request,
     sspdy_spdy_proto_read,
 };
-
-#if 0
-apr_status_t test(sspdy_stream_t *stream, apr_pool_t *pool)
-{
-    const char *data;
-    apr_uint32_t len;
-    spdy_frame_hdr_t *hdr;
-    const char syn_reply_hdr[] = { 0x80, 0x03, 0x00, 0x02, 0x00, 0x00,
-        0x00, 0xff, 0x00, 0x00, 0x00, 0x02 };
-    apr_status_t status;
-
-    spdy_proto_ctx_t *ctx = stream->data;
-
-    STATUSERR(create_compressed_header_block(ctx, &data, &len, pool));
-
-    ctx->vec[0].iov_base = (void *)syn_reply_hdr;
-    ctx->vec[0].iov_len = 12;
-    ctx->vec_len = 1;
-    ctx->available = ctx->vec[0].iov_len;
-
-    STATUSERR(read_spdy_frame_hdr(&hdr, ctx, ctx->pool));
-
-    ctx->vec[0].iov_base = (void *)data;
-    ctx->vec[0].iov_len = len;
-    ctx->vec_len = 1;
-    ctx->available = ctx->vec[0].iov_len;
-    ctx->in_cur_pos = 0;
-    hdr->length = len;
-
-    STATUSERR(read_compressed_header_block(ctx, hdr, pool));
-
-    return APR_SUCCESS;
-}
-#endif

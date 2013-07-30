@@ -14,8 +14,7 @@
  */
 
 #include "simplespdy.h"
-
-
+#include "spdy_protocol.h"
 
 /* Utility functions */
 #define MAX_STREAMID 0x7FFFFFFF
@@ -94,10 +93,10 @@ create_compressed_header_block(spdy_syn_stream_ctx_t *ctx, const char **data,
     int i;
 
     hdr_val_pair_t headers[] = {
-        { ":method", "HEAD" },
+        { ":method", "GET" },
         { ":path", "/" },
         { ":version", "HTTP/1.1" },
-        { ":host", "lgo-ubuntu1" },
+        { ":host", "www.google.be" },
         { ":scheme", "https" },
     };
 
@@ -200,5 +199,39 @@ sspdy_spdy_out_syn_stream_read(sspdy_stream_t *stream,
 const sspdy_stream_type_t sspdy_stream_type_spdy_out_syn_stream = {
     "OUT/SPDY_SYN_STREAM",
     sspdy_spdy_out_syn_stream_read,
+    NULL,
+};
+/* ===========================================================================*/
+
+typedef struct spdy_syn_data_ctx_t {
+    spdy_proto_ctx_t *spdy_ctx;
+    sspdy_data_frame_t *frame;
+    apr_pool_t *pool;
+} spdy_syn_data_ctx_t;
+
+apr_status_t
+sspdy_create_spdy_in_data_stream(sspdy_stream_t **stream,
+                                 spdy_proto_ctx_t *spdy_ctx,
+                                 sspdy_data_frame_t *frame,
+                                 apr_pool_t *pool)
+{
+    spdy_syn_data_ctx_t *ctx;
+    apr_status_t status;
+
+    ctx = apr_pcalloc(pool, sizeof(spdy_syn_stream_ctx_t));
+    ctx->spdy_ctx = spdy_ctx;
+    ctx->frame = frame;
+    ctx->pool = pool;
+
+    *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
+    (*stream)->type = &sspdy_stream_type_spdy_in_data;
+    (*stream)->data = ctx;
+
+    return APR_SUCCESS;
+}
+
+const sspdy_stream_type_t sspdy_stream_type_spdy_in_data = {
+    "IN/SPDY_DATA",
+/*    sspdy_spdy_in_data_read,*/
     NULL,
 };

@@ -13,38 +13,30 @@
  * limitations under the License.
  */
 
-#include "simplespdy.h"
-#include "config_store.h"
+#ifndef CONFIG_STORE_H
+#define CONFIG_STORE_H
+
+typedef struct sspdy_config_store_t sspdy_config_store_t;
+
+typedef struct sspdy_general_config_store_t {
+
+} sspdy_general_config_store_t;
+
+struct sspdy_config_store_t {
+    sspdy_general_config_store_t *general_config_store;
+};
 
 apr_status_t
 create_general_config_store(sspdy_general_config_store_t **config_store,
-                            apr_pool_t *pool)
-{
-    *config_store = apr_pcalloc(pool, sizeof(sspdy_general_config_store_t));
-
-    
-    return APR_SUCCESS;
-}
+                            apr_pool_t *pool);
 
 apr_status_t
 create_config_store(sspdy_config_store_t **config_store,
                     sspdy_general_config_store_t *general_config_store,
-                    apr_pool_t *pool)
-{
-    sspdy_config_store_t *store;
+                    apr_pool_t *pool);
 
-    store = apr_pcalloc(pool, sizeof(sspdy_config_store_t));
-    store->general_config_store = general_config_store;
+apr_status_t store_config_for_connection(apr_pool_t *pool);
 
-    return APR_SUCCESS;
-}
-/*
-apr_status_t
-store_config_for_connection(sspdy_config_store_t **config_store,
-                            sspdy_general_config_store_t *general_config_store,
-                            apr_pool_t *pool)
-{
 
-    return APR_SUCCESS;
-}
-*/
+
+#endif

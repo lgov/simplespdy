@@ -22,10 +22,9 @@
 #include <apr_lib.h>
 
 #include "simplespdy.h"
-
-
-/* flags */
-#define FLAG_STOP_WRITING 0x0001
+#include "config_store.h"
+#include "protocols.h"
+#include "connections.h"
 
 typedef struct sspdy_context_t
 {
@@ -35,43 +34,11 @@ typedef struct sspdy_context_t
     sspdy_config_store_t *config_store;
 
     const char *hostname;
-    apr_socket_t *skt;
 
     sspdy_stream_t *stream;
     sspdy_protocol_t *proto;
-
-    int flags;
-
+    sspdy_connection_t *conn;
 } sspdy_context_t;
-
-apr_status_t sspdy_connect(sspdy_context_t *sspdy_ctx,
-                           const char *hostname, apr_port_t port,
-                           apr_pool_t *pool)
-{
-    apr_socket_t *skt;
-    apr_sockaddr_t *host_address = NULL;
-    apr_status_t status;
-
-    STATUSERR(apr_sockaddr_info_get(&host_address, hostname,
-                                    APR_UNSPEC, port, 0, pool));
-
-    STATUSERR(apr_socket_create(&skt, host_address->family,
-                                SOCK_STREAM, APR_PROTO_TCP, pool));
-
-    STATUSERR(apr_socket_timeout_set(skt, 0));
-
-    STATUSERR(apr_socket_opt_set(skt, APR_TCP_NODELAY, 1));
-    
-    status = apr_socket_connect(skt, host_address);
-    if (status != APR_SUCCESS) {
-        if (!APR_STATUS_IS_EINPROGRESS(status))
-            return status;
-    }
-
-    sspdy_ctx->skt = skt;
-
-    return APR_SUCCESS;
-}
 
 apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
 {
@@ -85,51 +52,30 @@ apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
 
     STATUSERR(apr_pollset_create(&pollset, 32, pool, 0));
 
-    if (sspdy_ctx->skt) {
-        apr_pollfd_t pfd = { 0 };
-
-        pfd.desc_type = APR_POLL_SOCKET;
-        pfd.desc.s = sspdy_ctx->skt;
-        pfd.reqevents = APR_POLLIN | APR_POLLHUP | APR_POLLERR;
-
-        if (!sspdy_ctx->flags & FLAG_STOP_WRITING) {
-
-            pfd.reqevents |= APR_POLLOUT;
-        }
-
-        status = apr_pollset_add(pollset, &pfd);
-        if (status != APR_SUCCESS)
-            goto cleanup;
-    }
+    status = sspdy_connection_update_pollset(sspdy_ctx->conn, pollset);
+    if (status != APR_SUCCESS)
+        goto cleanup;
 
     status = apr_pollset_poll(pollset, duration, &num, &desc);
     if (status != APR_SUCCESS)
         goto cleanup;
 
     while (num--) {
-        if (desc->desc.s == sspdy_ctx->skt) {
+        sspdy_connection_t *conn = desc->client_data;
+        if (conn) {
             if (desc->rtnevents & APR_POLLIN) {
                 const char *data;
                 apr_size_t len;
 
-                sspdy_ctx->flags &= ~FLAG_STOP_WRITING;
-
                 while (1) {
-                    status = sspdy_stream_read(sspdy_ctx->stream, 100000, &data,
-                                               &len);
-                    sspdy__log_skt(LOG, __FILE__, sspdy_ctx->skt,
-                                   "ssl_socket_read with status %d, len %d\n",
-                                   status, len);
+                    status = sspdy_connection_read(sspdy_ctx->conn, 100000,
+                                                   &data, &len);
                     if (SSPDY_READ_ERROR(status))
                         goto cleanup;
 
                     if (len) {
                         STATUSERR(sspdy_proto_data_available(sspdy_ctx->proto,
                                                              data, len));
-
-                        sspdy__log_skt(LOG, __FILE__, sspdy_ctx->skt,
-                                       "read data of length %d:\n%.*s\n",
-                                       len, len, data);
                     }
 
                     if (status == APR_EAGAIN)
@@ -144,22 +90,9 @@ apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
                 STATUSREADERR(sspdy_proto_read(sspdy_ctx->proto, 100000,
                                                &data, &len));
 
-                status = sspdy_stream_write(sspdy_ctx->stream, data, &len);
-                if (status == SSPDY_SSL_WANTS_READ) {
-                    /* Stop writing until next read */
-                    sspdy_ctx->flags |= FLAG_STOP_WRITING;
-                    status = APR_EAGAIN;
-                }
+                status = sspdy_connection_write(sspdy_ctx->conn, data, &len);
                 if (SSPDY_READ_ERROR(status))
                     goto cleanup;
-                if (status == APR_EOF)
-                    sspdy_ctx->flags |= FLAG_STOP_WRITING;
-
-                if (len) {
-                    sspdy__log_skt(LOG, __FILE__, sspdy_ctx->skt,
-                                   "wrote data of length %d:\n%.*s\n",
-                                   len, len, data);
-                }
             }
             if (desc->rtnevents & APR_POLLHUP ||
                 desc->rtnevents & APR_POLLERR) {
@@ -222,19 +155,25 @@ int main(void)
 }
 #endif
 
+apr_status_t response_handler()
+{
+    return APR_SUCCESS;
+}
+
 apr_status_t setup_request(void *baton, const char **data,
                            apr_size_t *len)
 {
     return APR_SUCCESS;
 }
 
+#include "spdy_protocol.h"
+
 int main(void)
 {
     apr_pool_t *global_pool, *pool;
     apr_uri_t uri;
-    const char *url = "https://www.google.com";
+    const char *url = "https://www.google.be";
     sspdy_context_t *sspdy_ctx;
-    ssl_context_t *ssl_ctx;
     sspdy_stream_t *skt_stream;
     apr_size_t len;
     apr_status_t status;
@@ -254,20 +193,19 @@ int main(void)
 
     STATUSERR(init_sspdy_context(&sspdy_ctx, pool));
 
-    STATUSERR(sspdy_connect(sspdy_ctx, uri.hostname, uri.port, pool));
-
     sspdy_ctx->hostname = uri.hostname;
 
-    ssl_ctx = init_ssl(pool, "spdy/3", sspdy_ctx->skt, uri.hostname);
-    STATUSERR(sspdy_create_buf_stream(&sspdy_ctx->stream, ssl_socket_read,
-                                      ssl_socket_write, ssl_ctx,
-                                      pool));
+    STATUSERR(sspdy_create_tls_connection(&sspdy_ctx->conn,
+                                          sspdy_ctx->config_store,
+                                          uri.hostname, uri.port,
+                                          pool));
 
-    STATUSERR(sspdy_create_spdy_protocol(&sspdy_ctx->proto,
-                                         sspdy_ctx->config_store,
-                                         pool));
+    STATUSERR(sspdy_create_spdy_tls_protocol(&sspdy_ctx->proto,
+                                             sspdy_ctx->config_store,
+                                             pool));
 
-    STATUSERR(sspdy_proto_new_request(sspdy_ctx->proto, setup_request, sspdy_ctx));
+    STATUSERR(sspdy_proto_queue_request(sspdy_ctx->proto, setup_request,
+                                        sspdy_ctx));
 
     while (1) {
         status = run_loop(sspdy_ctx, pool);

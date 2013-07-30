@@ -14,6 +14,7 @@
  */
 
 #include "simplespdy.h"
+#include "connections.h"
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>

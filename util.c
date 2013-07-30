@@ -92,25 +92,6 @@ void sspdy__log_skt(int verbose_flag, const char *filename, apr_socket_t *skt,
     }
 }
 
-apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
-                                        const char *data, apr_size_t len)
-{
-    return proto->type->data_available(proto, data, len);
-}
-
-apr_status_t sspdy_proto_new_request(sspdy_protocol_t *proto,
-                                     sspdy_setup_request_t setup_request,
-                                     void *setup_baton)
-{
-    return proto->type->new_request(proto, setup_request, setup_baton);
-}
-
-apr_status_t sspdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
-                              const char **data, apr_size_t *len)
-{
-    return proto->type->read(proto, requested, data, len);
-}
-
 apr_status_t sspdy_stream_read(sspdy_stream_t *stream, apr_size_t requested,
                                const char **data, apr_size_t *len)
 {
