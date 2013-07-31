@@ -240,9 +240,22 @@ apr_status_t sspdy_spdy_in_data_read(sspdy_stream_t *stream,
     spdy_data_ctx_t *ctx = stream->data;
     apr_status_t status;
 
-    STATUSERR(sspdy_stream_read(ctx->wrapped, requested, data, len));
+    STATUSREADERR(sspdy_stream_read(ctx->wrapped, requested, data, len));
 
-    return APR_SUCCESS;
+    if (*len)
+        ctx->available -= *len;
+
+    sspdy__log(LOG, __FILE__, "data frame: %d bytes remaining\n", ctx->available);
+
+    return status;
+}
+
+void sspdy_spdy_in_data_set_input(sspdy_stream_t *stream,
+                                  sspdy_stream_t *new_input)
+{
+    spdy_data_ctx_t *ctx = stream->data;
+
+    ctx->wrapped = new_input;
 }
 
 const sspdy_stream_type_t sspdy_stream_type_spdy_in_data = {

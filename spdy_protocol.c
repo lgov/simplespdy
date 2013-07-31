@@ -605,7 +605,7 @@ apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
     ctx->available += len;
     ctx->vec_len++;
 
-    if (!ctx->header_read) {
+    if (!ctx->current_frame) {
         sspdy__log(LOG, __FILE__,
                    "proto_data_available, new header available: %d bytes.\n",
                    len + ctx->available);
@@ -614,33 +614,50 @@ apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
 
         STATUSERR(read_spdy_frame_hdr(&hdr, ctx, ctx->pool));
 
-        ctx->header_read = 1;
-        ctx->hdr = hdr;
+        ctx->current_frame = hdr;
+        ctx->processed_data = 0;
     } else {
-        hdr = ctx->hdr;
+        hdr = ctx->current_frame;
     }
 
     if (hdr->control) {
         STATUSERR(read_spdy_frame(&remaining, ctx, hdr, ctx->pool));
-        ctx->header_read = 0;
+        ctx->current_frame = NULL;
     } else {
         sspdy_stream_t *stream;
         sspdy_stream_t *wrapped;
         const char *buf = ctx->vec[ctx->in_iov_pos].iov_base + ctx->in_cur_pos;
 
+        apr_size_t remainder = hdr->length - ctx->processed_data;
+        remainder = ctx->available < remainder ? ctx->available : remainder;
+
         STATUSERR(sspdy_create_simple_stream(&wrapped,
                                              buf,
-                                             ctx->available,
+                                             remainder,
                                              ctx->pool));
-        ctx->available = 0;
-        ctx->in_iov_pos++;
-        
+        ctx->available -= remainder;
+        ctx->in_cur_pos += remainder;
+        if (ctx->in_cur_pos >= ctx->vec[ctx->in_iov_pos].iov_len)
+            ctx->in_iov_pos++;
+
         /* data frame */
-        STATUSERR(sspdy_create_spdy_in_data_stream(&stream,
-                                                   wrapped,
-                                                   (sspdy_data_frame_t *)hdr,
-                                                   ctx->pool));
-        STATUSREADERR(ctx->req->handle_response(NULL, stream));
+        if (!ctx->current_stream) {
+            STATUSERR(sspdy_create_spdy_in_data_stream(&stream,
+                                                       wrapped,
+                                                       (sspdy_data_frame_t *)hdr,
+                                                       ctx->pool));
+            ctx->current_stream = stream;
+        } else {
+            sspdy_spdy_in_data_set_input(ctx->current_stream, wrapped);
+        }
+
+        STATUSREADERR(ctx->req->handle_response(NULL, ctx->current_stream));
+        ctx->processed_data += remainder;
+
+        if (ctx->processed_data - hdr->length == 0) {
+            ctx->current_frame = NULL;
+            ctx->current_stream = NULL;
+        }
     }
 
     compact_and_copy(proto, ctx->pool);
@@ -656,7 +673,7 @@ apr_status_t sspdy_spdy_proto_write(sspdy_stream_t *stream,
     apr_status_t status;
     
     STATUSERR(write_spdy_data_frame(ctx, data, len, ctx->pool));
-    
+
     return status;
 }
 #endif

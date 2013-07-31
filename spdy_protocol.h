@@ -136,7 +136,9 @@ struct spdy_proto_ctx_t
     spdy_request_t *req;
 
     /* incoming frames queue */
-    spdy_frame_hdr_t *hdr;
+    spdy_frame_hdr_t *current_frame;
+    sspdy_stream_t *current_stream;
+    apr_size_t processed_data;
 
     /*    const char *in_data;*/
     apr_size_t available;
@@ -148,8 +150,6 @@ struct spdy_proto_ctx_t
     const char *frame_buf;
 
     apr_uint32_t streamid;
-
-    int header_read;
 };
 
 typedef enum {

@@ -82,5 +82,7 @@ sspdy_create_spdy_in_data_stream(sspdy_stream_t **stream,
                                  sspdy_stream_t *wrapped,
                                  sspdy_data_frame_t *frame,
                                  apr_pool_t *pool);
+void sspdy_spdy_in_data_set_input(sspdy_stream_t *stream,
+                                  sspdy_stream_t *new_input);
 
 #endif
