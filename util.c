@@ -219,7 +219,66 @@ apr_status_t sspdy_buf_write(sspdy_stream_t *stream,
 }
 
 const sspdy_stream_type_t sspdy_stream_type_buffered = {
-    "SOCKET",
+    "BUFFERED",
     sspdy_buf_read,
     sspdy_buf_write,
+};
+
+typedef struct sspdy_simple_stream_ctx_t {
+    const char *data;
+    const char *cur;
+    apr_size_t available;
+    apr_pool_t *pool;
+} sspdy_simple_stream_ctx_t;
+
+apr_status_t sspdy_create_simple_stream(sspdy_stream_t **stream,
+                                        const char *buf,
+                                        apr_size_t len,
+                                        apr_pool_t *pool)
+{
+    sspdy_simple_stream_ctx_t *ctx;
+
+    ctx = apr_pcalloc(pool, sizeof(sspdy_simple_stream_ctx_t));
+    ctx->data = buf;
+    ctx->cur = ctx->data;
+    ctx->pool = pool;
+    ctx->available = len;
+
+    *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
+    (*stream)->type = &sspdy_stream_type_simple;
+    (*stream)->data = ctx;
+
+    return APR_SUCCESS;
+}
+
+apr_status_t sspdy_simple_read(sspdy_stream_t *stream, apr_size_t requested,
+                               const char **data, apr_size_t *len)
+{
+    sspdy_simple_stream_ctx_t *ctx = stream->data;
+
+    if (ctx->available) {
+        *data = ctx->cur;
+        *len = requested < ctx->available ? requested : ctx->available;
+        ctx->cur += *len;
+        ctx->available -= *len;
+    } else {
+        *len = 0;
+    }
+
+    if (!ctx->available) {
+        return APR_EOF;
+    }
+
+    return APR_SUCCESS;
+}
+
+apr_status_t sspdy_simple_write(sspdy_stream_t *stream,
+                             const char *data, apr_size_t *new_len)
+{
+    return APR_ENOTIMPL;
+}
+const sspdy_stream_type_t sspdy_stream_type_simple = {
+    "SIMPLE",
+    sspdy_simple_read,
+    sspdy_simple_write,
 };

@@ -155,14 +155,32 @@ int main(void)
 }
 #endif
 
-apr_status_t response_handler()
+apr_status_t handle_response(void *baton, sspdy_stream_t *stream)
 {
-    return APR_SUCCESS;
+    apr_status_t status;
+
+    while (1) {
+        const char *data;
+        apr_size_t len;
+
+        STATUSREADERR(sspdy_stream_read(stream, 100000, &data, &len));
+
+        sspdy__log(LOG, __FILE__, "Read response, %d bytes:\n%.*s\n----\n", len, len, data);
+
+        if (status == APR_EOF)
+            break;
+    }
+
+    return status;
 }
 
-apr_status_t setup_request(void *baton, const char **data,
+apr_status_t setup_request(void *baton,
+                           sspdy_handle_response_func_t *response_handler,
+                           const char **data,
                            apr_size_t *len)
 {
+    *response_handler = handle_response;
+
     return APR_SUCCESS;
 }
 

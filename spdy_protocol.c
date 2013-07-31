@@ -439,8 +439,48 @@ ensure_bytes(spdy_proto_ctx_t *ctx, sspdy_stream_t *wrapped,
 }
 #endif
 
-apr_status_t compact_and_copy(sspdy_protocol_t *proto)
+apr_status_t compact_and_copy(sspdy_protocol_t *proto, apr_pool_t *pool)
 {
+    spdy_proto_ctx_t *ctx = proto->data;
+    char *cur, *data;
+    int i;
+
+
+    if (ctx->available == 0) {
+        for (i = 0; i < ctx->vec_len; i++) {
+            ctx->vec[i].iov_len = 0;
+            ctx->vec[i].iov_base = NULL;
+        }
+        ctx->in_cur_pos = 0;
+        ctx->vec_len = 0;
+        ctx->in_iov_pos = 0;
+
+        return APR_SUCCESS;
+    }
+
+    if (ctx->vec_len == 1)
+        return APR_SUCCESS;
+
+    data = apr_palloc(pool, ctx->available);
+
+    cur = data;
+    for (i = 0; i < ctx->in_iov_pos; i++) {
+        ctx->vec[i].iov_len = 0;
+        ctx->vec[i].iov_base = NULL;
+    }
+    for (i = ctx->in_iov_pos; i < ctx->vec_len; i++) {
+        memcpy(cur, ctx->vec[i].iov_base + ctx->in_cur_pos,
+               ctx->vec[i].iov_len - ctx->in_cur_pos);
+        cur += (ctx->vec[i].iov_len - ctx->in_cur_pos);
+        ctx->vec[i].iov_len = 0;
+        ctx->vec[i].iov_base = NULL;
+        ctx->in_cur_pos = 0;
+    }
+    ctx->vec[0].iov_base = data;
+    ctx->vec[0].iov_len = ctx->available;
+    ctx->vec_len = 1;
+    ctx->in_iov_pos = 0;
+
     return APR_SUCCESS;
 }
 
@@ -502,15 +542,17 @@ sspdy_create_spdy_tls_protocol(sspdy_protocol_t **proto,
     return APR_SUCCESS;
 }
 
-apr_status_t sspdy_spdy_proto_queue_request(sspdy_protocol_t *proto,
-                                            sspdy_setup_request_t setup_request,
-                                            void *setup_baton)
+apr_status_t
+sspdy_spdy_proto_queue_request(sspdy_protocol_t *proto,
+                               sspdy_setup_request_func_t setup_request,
+                               void *setup_baton)
 {
     spdy_proto_ctx_t *ctx = proto->data;
 
     spdy_request_t *req = apr_palloc(ctx->pool, sizeof(spdy_request_t));
     req->setup_baton = setup_baton;
     req->setup_request = setup_request;
+    req->written = 0;
 
     /* Add to queue */
     ctx->req = req;
@@ -526,9 +568,11 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
     sspdy_stream_t *syn_stream;
     apr_status_t status;
 
-    if (ctx->req) {
-        ctx->req->setup_request(ctx->req->setup_baton, data, len);
-        ctx->req = NULL;
+    if (ctx->req && !ctx->req->written) {
+        ctx->req->setup_request(ctx->req->setup_baton,
+                                &ctx->req->handle_response,
+                                data, len);
+        ctx->req->written = 1;
 
         /* create a SYN_STREAM frame */
         STATUSERR(sspdy_create_spdy_out_syn_stream(&syn_stream, ctx,
@@ -547,8 +591,7 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
 }
 
 apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
-                                             const char *data,
-                                             apr_size_t len)
+                                             const char *data, apr_size_t len)
 {
     spdy_proto_ctx_t *ctx = proto->data;
     spdy_frame_hdr_t *hdr;
@@ -557,28 +600,50 @@ apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
     apr_status_t status;
     int current_msg_in_progress = 0;
 
-    sspdy__log(LOG, __FILE__, "proto_data_available: %d bytes.\n", len);
-
     ctx->vec[ctx->vec_len].iov_base = (void *)data;
     ctx->vec[ctx->vec_len].iov_len = len;
     ctx->available += len;
     ctx->vec_len++;
 
-    if (!current_msg_in_progress) {
-#if 0
-        STATUSREADERR(ensure_bytes(ctx, ctx->wrapped, 8, &frlen));
+    if (!ctx->header_read) {
+        sspdy__log(LOG, __FILE__,
+                   "proto_data_available, new header available: %d bytes.\n",
+                   len + ctx->available);
 
-        if (!frlen)
-            return status;
-#endif
+        /* compact_and_copy */
+
         STATUSERR(read_spdy_frame_hdr(&hdr, ctx, ctx->pool));
-#if 0
-        STATUSREADERR(ensure_bytes(ctx, ctx->wrapped, hdr->length, &frlen));
-#endif
-        STATUSERR(read_spdy_frame(&remaining, ctx, hdr, ctx->pool));
+
+        ctx->header_read = 1;
+        ctx->hdr = hdr;
+    } else {
+        hdr = ctx->hdr;
     }
 
-    compact_and_copy(proto);
+    if (hdr->control) {
+        STATUSERR(read_spdy_frame(&remaining, ctx, hdr, ctx->pool));
+        ctx->header_read = 0;
+    } else {
+        sspdy_stream_t *stream;
+        sspdy_stream_t *wrapped;
+        const char *buf = ctx->vec[ctx->in_iov_pos].iov_base + ctx->in_cur_pos;
+
+        STATUSERR(sspdy_create_simple_stream(&wrapped,
+                                             buf,
+                                             ctx->available,
+                                             ctx->pool));
+        ctx->available = 0;
+        ctx->in_iov_pos++;
+        
+        /* data frame */
+        STATUSERR(sspdy_create_spdy_in_data_stream(&stream,
+                                                   wrapped,
+                                                   (sspdy_data_frame_t *)hdr,
+                                                   ctx->pool));
+        STATUSREADERR(ctx->req->handle_response(NULL, stream));
+    }
+
+    compact_and_copy(proto, ctx->pool);
 
     return status;
 }

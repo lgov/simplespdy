@@ -20,23 +20,29 @@
 #include <apr_pools.h>
 
 #include "config_store.h"
+#include "spdy_streams.h"
 
 /*************************/
 /* Protocol declarations */
 /*************************/
 typedef struct sspdy_protocol_type_t sspdy_protocol_type_t;
 
-typedef struct sspdy_protocol_t {
+struct sspdy_protocol_t {
     /** the type of this protocol */
     const sspdy_protocol_type_t *type;
 
     /** private data */
     void *data;
-} sspdy_protocol_t;
+};
 
+typedef apr_status_t (*sspdy_handle_response_func_t)(void *baton,
+                                                     sspdy_stream_t *stream);
 
-typedef apr_status_t (*sspdy_setup_request_t)(void *baton, const char **data,
-apr_size_t *len);
+typedef apr_status_t
+(*sspdy_setup_request_func_t)(void *baton,
+                              sspdy_handle_response_func_t *handle_response,
+                              const char **data,
+                              apr_size_t *len);
 
 struct sspdy_protocol_type_t {
     const char *name;
@@ -48,7 +54,7 @@ struct sspdy_protocol_type_t {
                                    apr_size_t len);
 
     apr_status_t (*queue_request)(sspdy_protocol_t *proto,
-                                  sspdy_setup_request_t setup_request,
+                                  sspdy_setup_request_func_t setup_request,
                                   void *setup_baton);
 
     apr_status_t (*read)(sspdy_protocol_t *proto, apr_size_t requested,
@@ -58,7 +64,7 @@ struct sspdy_protocol_type_t {
 };
 
 apr_status_t sspdy_proto_queue_request(sspdy_protocol_t *proto,
-                                       sspdy_setup_request_t setup_request,
+                                       sspdy_setup_request_func_t setup_request,
                                        void *setup_baton);
 apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
                                         const char *data, apr_size_t len);
@@ -71,8 +77,10 @@ apr_status_t sspdy_create_https_protocol(sspdy_protocol_t **,
                                          apr_pool_t *pool);
 
 typedef struct spdy_request_t {
-    sspdy_setup_request_t setup_request;
+    sspdy_setup_request_func_t setup_request;
+    sspdy_handle_response_func_t handle_response;
     void *setup_baton;
+    int written;
 } spdy_request_t;
 
 /* SPDY protocol */

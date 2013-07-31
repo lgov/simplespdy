@@ -15,6 +15,7 @@
 
 #include "simplespdy.h"
 #include "spdy_protocol.h"
+#include "spdy_streams.h"
 
 /* Utility functions */
 #define MAX_STREAMID 0x7FFFFFFF
@@ -203,24 +204,26 @@ const sspdy_stream_type_t sspdy_stream_type_spdy_out_syn_stream = {
 };
 /* ===========================================================================*/
 
-typedef struct spdy_syn_data_ctx_t {
-    spdy_proto_ctx_t *spdy_ctx;
+typedef struct spdy_data_ctx_t {
     sspdy_data_frame_t *frame;
     apr_pool_t *pool;
-} spdy_syn_data_ctx_t;
+    sspdy_stream_t *wrapped;
+    apr_uint32_t available;
+} spdy_data_ctx_t;
 
 apr_status_t
 sspdy_create_spdy_in_data_stream(sspdy_stream_t **stream,
-                                 spdy_proto_ctx_t *spdy_ctx,
+                                 sspdy_stream_t *wrapped,
                                  sspdy_data_frame_t *frame,
                                  apr_pool_t *pool)
 {
-    spdy_syn_data_ctx_t *ctx;
+    spdy_data_ctx_t *ctx;
     apr_status_t status;
 
-    ctx = apr_pcalloc(pool, sizeof(spdy_syn_stream_ctx_t));
-    ctx->spdy_ctx = spdy_ctx;
+    ctx = apr_pcalloc(pool, sizeof(spdy_data_ctx_t));
     ctx->frame = frame;
+    ctx->available = frame->hdr.length;
+    ctx->wrapped = wrapped;
     ctx->pool = pool;
 
     *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
@@ -230,8 +233,20 @@ sspdy_create_spdy_in_data_stream(sspdy_stream_t **stream,
     return APR_SUCCESS;
 }
 
+apr_status_t sspdy_spdy_in_data_read(sspdy_stream_t *stream,
+                                     apr_size_t requested,
+                                     const char **data, apr_size_t *len)
+{
+    spdy_data_ctx_t *ctx = stream->data;
+    apr_status_t status;
+
+    STATUSERR(sspdy_stream_read(ctx->wrapped, requested, data, len));
+
+    return APR_SUCCESS;
+}
+
 const sspdy_stream_type_t sspdy_stream_type_spdy_in_data = {
     "IN/SPDY_DATA",
-/*    sspdy_spdy_in_data_read,*/
+    sspdy_spdy_in_data_read,
     NULL,
 };

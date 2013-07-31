@@ -14,6 +14,7 @@
  */
 
 #include "simplespdy.h"
+#include "spdy_protocol.h"
 
 #include <zlib.h>
 

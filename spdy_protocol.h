@@ -13,11 +13,13 @@
  * limitations under the License.
  */
 
-#ifndef SPDYCLIENT_H
-#define SPDYCLIENT_H
+#ifndef SPDY_PROTOCOL_H
+#define SPDY_PROTOCOL_H
 
 #include "protocols.h"
 #include "config_store.h"
+
+typedef struct compress_ctx_t compress_ctx_t;
 
 typedef struct spdy_frame_hdr_t {
     apr_byte_t control;
@@ -81,12 +83,12 @@ typedef struct sspdy_goaway_frame_t {
     
 } sspdy_goaway_frame_t;
 
-typedef struct sspdy_data_frame_t {
+struct sspdy_data_frame_t {
     spdy_frame_hdr_t hdr;
 
     frame_read_state_t state;
 
-} sspdy_data_frame_t;
+};
 
 
 #define READ_INT32(p, val)\
@@ -104,6 +106,23 @@ typedef struct sspdy_data_frame_t {
 #define READ_INT8(p, val)\
             val = (const unsigned char)*p++;
 
+/* ZLib compression */
+apr_status_t
+init_compression(compress_ctx_t **z_ctx, apr_pool_t *pool);
+
+apr_status_t compressbuf(const char **data, apr_size_t *len,
+                         compress_ctx_t *z_ctx,
+                         const char* orig, apr_size_t orig_len,
+                         apr_pool_t *pool);
+
+apr_status_t decompressbuf(const char **data, apr_size_t *len,
+                           compress_ctx_t *z_ctx,
+                           const char* orig, apr_size_t orig_len,
+                           apr_pool_t *pool);
+
+apr_status_t
+init_compression(compress_ctx_t **z_ctx, apr_pool_t *pool);
+
 struct spdy_proto_ctx_t
 {
     apr_pool_t *pool;
@@ -113,7 +132,11 @@ struct spdy_proto_ctx_t
     struct iovec vec[16];
     size_t vec_len;
 
+    /* priority request queue */
     spdy_request_t *req;
+
+    /* incoming frames queue */
+    spdy_frame_hdr_t *hdr;
 
     /*    const char *in_data;*/
     apr_size_t available;
@@ -125,6 +148,8 @@ struct spdy_proto_ctx_t
     const char *frame_buf;
 
     apr_uint32_t streamid;
+
+    int header_read;
 };
 
 typedef enum {

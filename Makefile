@@ -9,7 +9,7 @@ INC_PATHS=-I/opt/local/include/apr-1 -I/opt/local/include
 LIBS=-lapr-1 -laprutil-1 -lssl -lcrypto -lz
 
 OBJS=$(addprefix $(OBJDIR)/, simplespdy.o util.o ssl.o config_store.o\
-                             spdy_protocol.o spdycompress.o spdystreams.o\
+                             spdy_protocol.o spdycompress.o spdy_streams.o\
                              protocols.o connections.o)
 OBJDIR=build
 
