@@ -25,7 +25,7 @@
 
 /* Reads a 8 byte header. */
 static apr_status_t
-read_header_data(spdy_proto_ctx_t *ctx, sspdy_stream_t *stream,
+read_header_data(spdy_proto_ctx_t *ctx, serf_bucket_t *bkt,
                  const char **data)
 {
     if (ctx->available == 8) {
@@ -41,7 +41,7 @@ read_header_data(spdy_proto_ctx_t *ctx, sspdy_stream_t *stream,
         const char *ptr;
         apr_status_t status;
 
-        STATUSREADERR(sspdy_stream_read(stream, 8 - ctx->available,
+        STATUSREADERR(serf_bucket_read(bkt, 8 - ctx->available,
                                         data, &len));
         ptr = *data;
         for (i = 0; i < len; i++) {
@@ -66,7 +66,7 @@ read_header_data(spdy_proto_ctx_t *ctx, sspdy_stream_t *stream,
 
 static apr_status_t
 read_compressed_header_block(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *frame_hdr,
-                             sspdy_stream_t *stream,
+                             serf_bucket_t *bkt,
                              apr_pool_t *pool)
 {
     const char *p;
@@ -83,7 +83,7 @@ read_compressed_header_block(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *frame_hdr,
         apr_size_t len;
 
         /* Assume for now that all bytes are available */
-        STATUSREADERR(sspdy_stream_read(stream, frame_hdr->length - 4,
+        STATUSREADERR(serf_bucket_read(bkt, frame_hdr->length - 4,
                                         &compressed, &len));
         if (len < frame_hdr->length - 4)
             return APR_EGENERAL;
@@ -185,7 +185,7 @@ create_data_frame(apr_pool_t *pool)
 
 static apr_status_t
 read_spdy_frame_hdr(spdy_frame_hdr_t **hdr, spdy_proto_ctx_t *ctx,
-                    sspdy_stream_t *stream,
+                    serf_bucket_t *bkt,
                     apr_pool_t *pool)
 {
     spdy_frame_hdr_t *frame;
@@ -195,7 +195,7 @@ read_spdy_frame_hdr(spdy_frame_hdr_t **hdr, spdy_proto_ctx_t *ctx,
 
     *hdr = NULL;
 
-    STATUSERR(read_header_data(ctx, stream, &p));
+    STATUSERR(read_header_data(ctx, bkt, &p));
 
     frame = apr_palloc(ctx->pool, sizeof(spdy_frame_hdr_t));
 
@@ -243,7 +243,7 @@ typedef enum {
 
 static apr_status_t
 read_spdy_settings_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
-                         sspdy_stream_t *stream,
+                         serf_bucket_t *bkt,
                          apr_pool_t *pool)
 {
     const char *p;
@@ -256,7 +256,7 @@ read_spdy_settings_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
         apr_size_t len;
         /* Read the number of entries */
         /* Assume for now that all bytes are available */
-        STATUSREADERR(sspdy_stream_read(stream, 4, &p, &len));
+        STATUSREADERR(serf_bucket_read(bkt, 4, &p, &len));
         if (len < 4)
             return APR_EGENERAL;
 
@@ -280,7 +280,7 @@ read_spdy_settings_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
         apr_uint32_t id, value;
 
         /* Assume for now that all bytes are available */
-        STATUSREADERR(sspdy_stream_read(stream, 8, &p, &len));
+        STATUSREADERR(serf_bucket_read(bkt, 8, &p, &len));
         if (len < 8)
             return APR_EGENERAL;
 
@@ -308,7 +308,7 @@ read_spdy_settings_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
 
 static apr_status_t
 read_spdy_data_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
-                     sspdy_stream_t *stream,
+                     serf_bucket_t *bkt,
                      apr_pool_t *pool)
 {
     const char *p;
@@ -321,7 +321,7 @@ read_spdy_data_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
 
     }
     /* Assume for now that all bytes are available */
-    STATUSREADERR(sspdy_stream_read(stream, hdr->length, &p, &len));
+    STATUSREADERR(serf_bucket_read(bkt, hdr->length, &p, &len));
     if (len < hdr->length)
         return APR_EGENERAL;
 
@@ -332,7 +332,7 @@ read_spdy_data_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
 
 static apr_status_t
 read_spdy_rst_stream_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
-                           sspdy_stream_t *stream,
+                           serf_bucket_t *bkt,
                            apr_pool_t *pool)
 {
     const char *p;
@@ -346,7 +346,7 @@ read_spdy_rst_stream_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
     }
 
     /* Assume for now that all bytes are available */
-    STATUSREADERR(sspdy_stream_read(stream, hdr->length, &p, &len));
+    STATUSREADERR(serf_bucket_read(bkt, hdr->length, &p, &len));
     if (len < 8)
         return APR_EGENERAL;
 
@@ -355,7 +355,7 @@ read_spdy_rst_stream_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
 
 static apr_status_t
 read_spdy_syn_reply_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
-                          sspdy_stream_t *stream,
+                          serf_bucket_t *bkt,
                           apr_pool_t *pool)
 {
     const char *p;
@@ -366,7 +366,7 @@ read_spdy_syn_reply_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
     sspdy__log(LOG, __FILE__, "Read SYN_REPLY frame.\n");
     if (frame->state == SPDY_FRAME_INIT) {
         /* Assume for now that all bytes are available */
-        STATUSREADERR(sspdy_stream_read(stream, 4, &p, &len));
+        STATUSREADERR(serf_bucket_read(bkt, 4, &p, &len));
         if (len < 4)
             return APR_EGENERAL;
 
@@ -376,14 +376,14 @@ read_spdy_syn_reply_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
     sspdy__log(LOG, __FILE__, "  streamid: 0x%x.\n", frame->streamid);
 
     if (hdr->length > 4)
-        STATUSERR(read_compressed_header_block(ctx, hdr, stream, pool));
+        STATUSERR(read_compressed_header_block(ctx, hdr, bkt, pool));
 
     return status;
 }
 
 static apr_status_t
 read_spdy_goaway_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
-                       sspdy_stream_t *stream,
+                       serf_bucket_t *bkt,
                        apr_pool_t *pool)
 {
     const char *p;
@@ -402,7 +402,7 @@ read_spdy_goaway_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
     }
 
     /* Assume for now that all bytes are available */
-    STATUSREADERR(sspdy_stream_read(stream, 8, &p, &len));
+    STATUSREADERR(serf_bucket_read(bkt, 8, &p, &len));
     if (len < 8)
         return APR_EGENERAL;
 
@@ -426,7 +426,7 @@ read_spdy_goaway_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
 static apr_status_t
 read_spdy_frame(apr_size_t *remaining,
                 spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
-                sspdy_stream_t *stream,
+                serf_bucket_t *bkt,
                 apr_pool_t *pool)
 {
     apr_status_t status;
@@ -436,16 +436,16 @@ read_spdy_frame(apr_size_t *remaining,
 /*            case SPDY_CTRL_SYN_STREAM:
                 break; */
             case SPDY_CTRL_REPLY:
-                status = read_spdy_syn_reply_frame(ctx, hdr, stream, pool);
+                status = read_spdy_syn_reply_frame(ctx, hdr, bkt, pool);
                 break;
             case SPDY_CTRL_RST_STREAM:
-                status = read_spdy_rst_stream_frame(ctx, hdr, stream, pool);
+                status = read_spdy_rst_stream_frame(ctx, hdr, bkt, pool);
                 break;
             case SPDY_CTRL_SETTINGS:
-                status = read_spdy_settings_frame(ctx, hdr, stream, pool);
+                status = read_spdy_settings_frame(ctx, hdr, bkt, pool);
                 break;
             case SPDY_CTRL_GOAWAY:
-                status = read_spdy_goaway_frame(ctx, hdr, stream, pool);
+                status = read_spdy_goaway_frame(ctx, hdr, bkt, pool);
                 break;
             default:
                 ctx->in_cur_pos += hdr->length;
@@ -453,7 +453,7 @@ read_spdy_frame(apr_size_t *remaining,
                 break;
         }
     } else {
-        status = read_spdy_data_frame(ctx, hdr, stream, pool);
+        status = read_spdy_data_frame(ctx, hdr, bkt, pool);
     }
 
     return status;
@@ -504,7 +504,7 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
                       const char **data, apr_size_t *len)
 {
     spdy_proto_ctx_t *ctx = proto->data;
-    sspdy_stream_t *syn_stream;
+    serf_bucket_t *req_bkt;
     apr_status_t status;
 
     if (ctx->req && !ctx->req->written) {
@@ -514,12 +514,12 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
         ctx->req->written = 1;
 
         /* create a SYN_STREAM frame */
-        STATUSERR(sspdy_create_spdy_out_syn_stream(&syn_stream, ctx,
+        STATUSERR(sspdy_create_spdy_out_syn_bucket(&req_bkt, ctx,
                                                    NULL, ctx->pool));
         /* create a DATA frame */
 
 
-        status = sspdy_stream_read(syn_stream, requested, data, len);
+        status = serf_bucket_read(req_bkt, requested, data, len);
 
         return status;
     }
@@ -530,7 +530,7 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
 }
 
 apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
-                                             sspdy_stream_t *wrapped)
+                                             serf_bucket_t *wrapped)
 {
     spdy_proto_ctx_t *ctx = proto->data;
     spdy_frame_hdr_t *hdr;
@@ -556,16 +556,16 @@ apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
             STATUSREADERR(read_spdy_frame(&remaining, ctx, hdr, wrapped, ctx->pool));
             ctx->current_frame = NULL;
         } else {
-            sspdy_stream_t *response;
+            serf_bucket_t *response;
             const char *buf;
 
-            /* find or create response stream for this data frame */
-            if (!ctx->current_stream) {
-                STATUSERR(sspdy_create_response_stream(&response,
+            /* find or create response bucket for this data frame */
+            if (!ctx->current_response) {
+                STATUSERR(sspdy_create_response_bucket(&response,
                                                        ctx->pool));
-                ctx->current_stream = response;
+                ctx->current_response = response;
             } else {
-                response = ctx->current_stream;
+                response = ctx->current_response;
             }
 
             /* Update the response */
@@ -580,7 +580,7 @@ apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
             if (status == APR_EOF) {
                 /* All data frames in this response where read. */
                 ctx->current_frame = NULL;
-                ctx->current_stream = NULL;
+                ctx->current_response = NULL;
             } else if (status == SSPDY_SPDY_FRAME_READ){
                 /* This frame is finished, but the response isn't. */
                 ctx->current_frame = NULL;
@@ -596,7 +596,7 @@ apr_status_t sspdy_spdy_proto_data_available(sspdy_protocol_t *proto,
 }
 
 #if 0
-apr_status_t sspdy_spdy_proto_write(sspdy_stream_t *stream,
+apr_status_t sspdy_spdy_proto_write(serf_bucket_t *bkt,
                                     const char *data, apr_size_t *len)
 {
     spdy_proto_ctx_t *ctx = stream->data;

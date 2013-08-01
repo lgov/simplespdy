@@ -139,7 +139,7 @@ struct spdy_proto_ctx_t
 
     /* incoming frames queue */
     spdy_frame_hdr_t *current_frame;
-    sspdy_stream_t *current_stream;
+    serf_bucket_t *current_response;
 
     char hdr_data[8];
     apr_size_t available;

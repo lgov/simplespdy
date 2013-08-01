@@ -92,18 +92,6 @@ void sspdy__log_skt(int verbose_flag, const char *filename, apr_socket_t *skt,
     }
 }
 
-apr_status_t sspdy_stream_read(sspdy_stream_t *stream, apr_size_t requested,
-                               const char **data, apr_size_t *len)
-{
-    return stream->type->read(stream, requested, data, len);
-}
-
-apr_status_t sspdy_stream_write(sspdy_stream_t *stream, const char *data,
-                                apr_size_t *len)
-{
-    return stream->type->write(stream, data, len);
-}
-
 typedef struct sspdy_buf_stream_ctx_t
 {
     readfunc_t read;
@@ -120,7 +108,7 @@ typedef struct sspdy_buf_stream_ctx_t
 } sspdy_buf_stream_ctx_t;
 
 apr_status_t
-sspdy_create_buf_stream(sspdy_stream_t **stream,
+sspdy_create_buf_bucket(serf_bucket_t **bkt,
                         readfunc_t read, writefunc_t write,
                         void *baton,
                         apr_pool_t *pool)
@@ -133,19 +121,19 @@ sspdy_create_buf_stream(sspdy_stream_t **stream,
     ctx->baton = baton;
     ctx->pool = pool;
 
-    *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
-    (*stream)->type = &sspdy_stream_type_buffered;
-    (*stream)->data = ctx;
+    *bkt = apr_palloc(pool, sizeof(serf_bucket_t));
+    (*bkt)->type = &sspdy_bucket_type_buffered;
+    (*bkt)->data = ctx;
 
     return APR_SUCCESS;
 }
 
-apr_status_t sspdy_buf_read(sspdy_stream_t *stream, apr_size_t requested,
+apr_status_t sspdy_buf_read(serf_bucket_t *bkt, apr_size_t requested,
                             const char **data, apr_size_t *len)
 {
     char buf[16384];
     apr_size_t bufsize = 16384;
-    sspdy_buf_stream_ctx_t *ctx = stream->data;
+    sspdy_buf_stream_ctx_t *ctx = bkt->data;
     apr_status_t status;
 
     if (!ctx->remaining) {
@@ -178,10 +166,10 @@ apr_status_t sspdy_buf_read(sspdy_stream_t *stream, apr_size_t requested,
     return status;
 }
 
-apr_status_t sspdy_buf_write(sspdy_stream_t *stream,
+apr_status_t sspdy_buf_write(serf_bucket_t *bkt,
                              const char *data, apr_size_t *new_len)
 {
-    sspdy_buf_stream_ctx_t *ctx = stream->data;
+    sspdy_buf_stream_ctx_t *ctx = bkt->data;
     apr_size_t len;
     apr_status_t status;
 
@@ -218,10 +206,9 @@ apr_status_t sspdy_buf_write(sspdy_stream_t *stream,
     return status;
 }
 
-const sspdy_stream_type_t sspdy_stream_type_buffered = {
+const serf_bucket_type_t sspdy_bucket_type_buffered = {
     "BUFFERED",
     sspdy_buf_read,
-    sspdy_buf_write,
 };
 
 typedef struct sspdy_simple_stream_ctx_t {
@@ -230,55 +217,3 @@ typedef struct sspdy_simple_stream_ctx_t {
     apr_size_t available;
     apr_pool_t *pool;
 } sspdy_simple_stream_ctx_t;
-
-apr_status_t sspdy_create_simple_stream(sspdy_stream_t **stream,
-                                        const char *buf,
-                                        apr_size_t len,
-                                        apr_pool_t *pool)
-{
-    sspdy_simple_stream_ctx_t *ctx;
-
-    ctx = apr_pcalloc(pool, sizeof(sspdy_simple_stream_ctx_t));
-    ctx->data = buf;
-    ctx->cur = ctx->data;
-    ctx->pool = pool;
-    ctx->available = len;
-
-    *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
-    (*stream)->type = &sspdy_stream_type_simple;
-    (*stream)->data = ctx;
-
-    return APR_SUCCESS;
-}
-
-apr_status_t sspdy_simple_read(sspdy_stream_t *stream, apr_size_t requested,
-                               const char **data, apr_size_t *len)
-{
-    sspdy_simple_stream_ctx_t *ctx = stream->data;
-
-    if (ctx->available) {
-        *data = ctx->cur;
-        *len = requested < ctx->available ? requested : ctx->available;
-        ctx->cur += *len;
-        ctx->available -= *len;
-    } else {
-        *len = 0;
-    }
-
-    if (!ctx->available) {
-        return APR_EOF;
-    }
-
-    return APR_SUCCESS;
-}
-
-apr_status_t sspdy_simple_write(sspdy_stream_t *stream,
-                             const char *data, apr_size_t *new_len)
-{
-    return APR_ENOTIMPL;
-}
-const sspdy_stream_type_t sspdy_stream_type_simple = {
-    "SIMPLE",
-    sspdy_simple_read,
-    sspdy_simple_write,
-};

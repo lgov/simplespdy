@@ -15,7 +15,7 @@
 
 #include "simplespdy.h"
 #include "spdy_protocol.h"
-#include "spdy_streams.h"
+#include "spdy_buckets.h"
 
 /* Utility functions */
 #define MAX_STREAMID 0x7FFFFFFF
@@ -48,40 +48,40 @@ next_streamid(apr_uint32_t *streamid, spdy_proto_ctx_t *ctx)
 /* SYN_STREAM stream */
 #define BUFSIZE 16384
 
-typedef struct spdy_syn_stream_ctx_t {
+typedef struct spdy_syn_bucket_ctx_t {
     spdy_proto_ctx_t *spdy_ctx;
     apr_hash_t *hdrs;
     apr_pool_t *pool;
     char *out_data;
     apr_size_t out_cur_pos;
     compress_ctx_t *z_ctx;
-} spdy_syn_stream_ctx_t;
+} spdy_syn_bucket_ctx_t;
 
 apr_status_t
-sspdy_create_spdy_out_syn_stream(sspdy_stream_t **stream,
+sspdy_create_spdy_out_syn_bucket(serf_bucket_t **bkt,
                                  spdy_proto_ctx_t *spdy_ctx,
                                  apr_hash_t *hdrs,
                                  apr_pool_t *pool)
 {
-    spdy_syn_stream_ctx_t *ctx;
+    spdy_syn_bucket_ctx_t *ctx;
     apr_status_t status;
 
-    ctx = apr_pcalloc(pool, sizeof(spdy_syn_stream_ctx_t));
+    ctx = apr_pcalloc(pool, sizeof(spdy_syn_bucket_ctx_t));
     ctx->spdy_ctx = spdy_ctx;
     ctx->hdrs = hdrs;
     ctx->out_data = apr_palloc(pool, BUFSIZE);
     ctx->pool = pool;
     STATUSERR(init_compression(&ctx->z_ctx, ctx->pool));
 
-    *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
-    (*stream)->type = &sspdy_stream_type_spdy_out_syn_stream;
-    (*stream)->data = ctx;
+    *bkt = apr_palloc(pool, sizeof(serf_bucket_t));
+    (*bkt)->type = &serf_bucket_type_out_syn;
+    (*bkt)->data = ctx;
 
     return APR_SUCCESS;
 }
 
 static apr_status_t
-create_compressed_header_block(spdy_syn_stream_ctx_t *ctx, const char **data,
+create_compressed_header_block(spdy_syn_bucket_ctx_t *ctx, const char **data,
                                apr_uint32_t *len, apr_pool_t *pool)
 {
     apr_uint32_t nr_of_hdrs;
@@ -131,7 +131,7 @@ create_compressed_header_block(spdy_syn_stream_ctx_t *ctx, const char **data,
 }
 
 static apr_status_t
-write_spdy_syn_stream_frame(spdy_syn_stream_ctx_t *ctx,
+write_spdy_syn_stream_frame(spdy_syn_bucket_ctx_t *ctx,
                             apr_size_t *len,
                             apr_pool_t *pool)
 {
@@ -179,11 +179,11 @@ write_spdy_syn_stream_frame(spdy_syn_stream_ctx_t *ctx,
 }
 
 static apr_status_t
-sspdy_spdy_out_syn_stream_read(sspdy_stream_t *stream,
+sspdy_spdy_out_syn_bucket_read(serf_bucket_t *bkt,
                                apr_size_t requested,
                                const char **data, apr_size_t *len)
 {
-    spdy_syn_stream_ctx_t *ctx = stream->data;
+    spdy_syn_bucket_ctx_t *ctx = bkt->data;
     apr_status_t status;
     
     STATUSERR(write_spdy_syn_stream_frame(ctx, len, ctx->pool));
@@ -197,9 +197,9 @@ sspdy_spdy_out_syn_stream_read(sspdy_stream_t *stream,
     return APR_SUCCESS;
 }
 
-const sspdy_stream_type_t sspdy_stream_type_spdy_out_syn_stream = {
-    "OUT/SPDY_SYN_STREAM",
-    sspdy_spdy_out_syn_stream_read,
+const serf_bucket_type_t serf_bucket_type_out_syn = {
+    "OUT/SPDY_SYN_BUCKET",
+    sspdy_spdy_out_syn_bucket_read,
     NULL,
 };
 /* ===========================================================================*/
@@ -207,12 +207,12 @@ const sspdy_stream_type_t sspdy_stream_type_spdy_out_syn_stream = {
 typedef struct spdy_data_ctx_t {
     sspdy_data_frame_t *frame;
     apr_pool_t *pool;
-    sspdy_stream_t *wrapped;
+    serf_bucket_t *wrapped;
     apr_uint32_t remaining;
 } spdy_data_ctx_t;
 
 apr_status_t
-sspdy_create_response_stream(sspdy_stream_t **stream,
+sspdy_create_response_bucket(serf_bucket_t **bkt,
                              apr_pool_t *pool)
 {
     spdy_data_ctx_t *ctx;
@@ -221,24 +221,24 @@ sspdy_create_response_stream(sspdy_stream_t **stream,
     ctx = apr_pcalloc(pool, sizeof(spdy_data_ctx_t));
     ctx->pool = pool;
 
-    *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
-    (*stream)->type = &sspdy_stream_type_spdy_in_data;
-    (*stream)->data = ctx;
+    *bkt = apr_palloc(pool, sizeof(serf_bucket_t));
+    (*bkt)->type = &serf_bucket_type_spdy_in_data;
+    (*bkt)->data = ctx;
 
     return APR_SUCCESS;
 }
 
-apr_status_t sspdy_spdy_in_data_read(sspdy_stream_t *stream,
+apr_status_t sspdy_spdy_in_data_read(serf_bucket_t *bkt,
                                      apr_size_t requested,
                                      const char **data, apr_size_t *len)
 {
-    spdy_data_ctx_t *ctx = stream->data;
+    spdy_data_ctx_t *ctx = bkt->data;
     apr_status_t status;
 
     if (!ctx->wrapped)
         return APR_EOF;
 
-    STATUSREADERR(sspdy_stream_read(ctx->wrapped, requested, data, len));
+    STATUSREADERR(serf_bucket_read(ctx->wrapped, requested, data, len));
 
     if (*len)
         ctx->remaining -= *len;
@@ -259,27 +259,27 @@ apr_status_t sspdy_spdy_in_data_read(sspdy_stream_t *stream,
     return status;
 }
 
-void sspdy_response_feed_data(sspdy_stream_t *stream,
-                              sspdy_stream_t *wrapped)
+void sspdy_response_feed_data(serf_bucket_t *bkt,
+                              serf_bucket_t *wrapped)
 {
-    spdy_data_ctx_t *ctx = stream->data;
+    spdy_data_ctx_t *ctx = bkt->data;
 
     ctx->wrapped = wrapped;
 }
 
-void sspdy_response_feed_frame(sspdy_stream_t *stream,
+void sspdy_response_feed_frame(serf_bucket_t *bkt,
                                sspdy_data_frame_t *frame,
-                               sspdy_stream_t *wrapped)
+                               serf_bucket_t *wrapped)
 {
-    spdy_data_ctx_t *ctx = stream->data;
+    spdy_data_ctx_t *ctx = bkt->data;
 
     ctx->frame = frame;
     ctx->remaining = frame->hdr.length;
 
-    sspdy_response_feed_data(stream, wrapped);
+    sspdy_response_feed_data(bkt, wrapped);
 }
 
-const sspdy_stream_type_t sspdy_stream_type_spdy_in_data = {
+const serf_bucket_type_t serf_bucket_type_spdy_in_data = {
     "IN/SPDY_DATA",
     sspdy_spdy_in_data_read,
     NULL,

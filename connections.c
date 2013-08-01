@@ -47,7 +47,7 @@ typedef struct tls_conn_ctx_t {
     ssl_context_t *ssl_ctx;
     apr_socket_t *skt;
 
-    sspdy_stream_t *stream;
+    serf_bucket_t *out_stream;
 
     int flags;
 } tls_conn_ctx_t;
@@ -94,7 +94,7 @@ sspdy_create_tls_connection(sspdy_connection_t ** conn,
     STATUSERR(sspdy_connect(&ctx->skt, hostname, port, pool));
 
     ctx->ssl_ctx = init_ssl(pool, "spdy/3", ctx->skt, hostname);
-    STATUSERR(sspdy_create_buf_stream(&ctx->stream, ssl_socket_read,
+    STATUSERR(sspdy_create_buf_bucket(&ctx->out_stream, ssl_socket_read,
                                       ssl_socket_write, ctx->ssl_ctx,
                                       pool));
 
@@ -114,7 +114,7 @@ apr_status_t sspdy_spdy_tls_connection_read(sspdy_connection_t *conn,
 
     ctx->flags &= ~FLAG_STOP_WRITING;
 
-    status = sspdy_stream_read(ctx->stream, requested, data, len);
+    status = serf_bucket_read(ctx->out_stream, requested, data, len);
     sspdy__log_skt(LOG, __FILE__, ctx->skt,
                    "sspdy_spdy_tls_connection_read with status %d, len %d\n",
                    status, *len);
@@ -128,7 +128,7 @@ apr_status_t sspdy_spdy_tls_connection_write(sspdy_connection_t *conn,
     tls_conn_ctx_t *ctx = conn->data;
     apr_status_t status = APR_SUCCESS;
 
-    status = sspdy_stream_write(ctx->stream, data, len);
+    status = sspdy_buf_write(ctx->out_stream, data, len);
     if (status == SSPDY_SSL_WANTS_READ) {
         /* Stop writing until next read */
         ctx->flags |= FLAG_STOP_WRITING;

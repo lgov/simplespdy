@@ -29,13 +29,13 @@
 typedef struct sspdy_context_t
 {
     apr_pool_t *pool;
+    serf_bucket_alloc_t *bkt_alloc;
 
     sspdy_general_config_store_t *general_config_store;
     sspdy_config_store_t *config_store;
 
     const char *hostname;
 
-    sspdy_stream_t *stream;
     sspdy_protocol_t *proto;
     sspdy_connection_t *conn;
 } sspdy_context_t;
@@ -74,12 +74,10 @@ apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
                         goto cleanup;
 
                     if (len) {
-                        sspdy_stream_t *wrapped;
+                        serf_bucket_t *wrapped;
 
-                        STATUSERR(sspdy_create_simple_stream(&wrapped,
-                                                             data,
-                                                             len,
-                                                             pool));
+                        wrapped = SERF_BUCKET_SIMPLE_STRING_LEN(data, len, sspdy_ctx->bkt_alloc);
+
                         STATUSERR(sspdy_proto_data_available(sspdy_ctx->proto,
                                                              wrapped));
                     }
@@ -122,6 +120,7 @@ apr_status_t init_sspdy_context(sspdy_context_t **sspdy_ctx, apr_pool_t *pool)
     sspdy_context_t *ctx = apr_pcalloc(pool, sizeof(sspdy_context_t));
 
     STATUSERR(apr_pool_create(&ctx->pool, pool));
+    ctx->bkt_alloc = serf_bucket_allocator_create(pool, NULL, NULL);
 
     STATUSERR(create_config_store(&ctx->config_store, ctx->general_config_store,
                                   ctx->pool));
@@ -135,33 +134,8 @@ apr_status_t init_sspdy_context(sspdy_context_t **sspdy_ctx, apr_pool_t *pool)
 
 #define REQ "GET / HTTP/1.1" CRLF \
             "Host: lgo-ubuntu1:443" CRLF CRLF
-#if 0
-int main(void)
-{
-    apr_pool_t *global_pool, *pool;
-    sspdy_context_t *sspdy_ctx;
-    apr_status_t status;
 
-    /* Initialize the Apache portable runtime library. */
-    apr_initialize();
-    atexit(apr_terminate);
-
-    apr_pool_create(&global_pool, NULL);
-    apr_pool_create(&pool, global_pool);
-
-    STATUSERR(init_sspdy_context(&sspdy_ctx, pool));
-
-    STATUSERR(sspdy_create_spdy_proto_stream(sspdy_ctx->config_store,
-                                             &sspdy_ctx->stream,
-                                             sspdy_ctx->stream,
-                                             pool));
-    test(sspdy_ctx->stream, pool);
-
-    return 0;
-}
-#endif
-
-apr_status_t handle_response(void *baton, sspdy_stream_t *stream)
+apr_status_t handle_response(void *baton, serf_bucket_t *response)
 {
     apr_status_t status;
 
@@ -169,7 +143,7 @@ apr_status_t handle_response(void *baton, sspdy_stream_t *stream)
         const char *data;
         apr_size_t len;
 
-        STATUSREADERR(sspdy_stream_read(stream, 100000, &data, &len));
+        STATUSREADERR(serf_bucket_read(response, 100000, &data, &len));
 
         sspdy__log(LOG, __FILE__, "Read response, %d bytes:\n%.*s\n----\n", len, len, data);
 
@@ -198,7 +172,6 @@ int main(void)
     apr_uri_t uri;
     const char *url = "https://www.google.be";
     sspdy_context_t *sspdy_ctx;
-    sspdy_stream_t *skt_stream;
     apr_size_t len;
     apr_status_t status;
 

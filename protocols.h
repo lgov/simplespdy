@@ -20,7 +20,7 @@
 #include <apr_pools.h>
 
 #include "config_store.h"
-#include "spdy_streams.h"
+#include "spdy_buckets.h"
 
 /*************************/
 /* Protocol declarations */
@@ -36,7 +36,7 @@ struct sspdy_protocol_t {
 };
 
 typedef apr_status_t (*sspdy_handle_response_func_t)(void *baton,
-                                                     sspdy_stream_t *stream);
+                                                     serf_bucket_t *response);
 
 typedef apr_status_t
 (*sspdy_setup_request_func_t)(void *baton,
@@ -46,12 +46,9 @@ typedef apr_status_t
 
 struct sspdy_protocol_type_t {
     const char *name;
-    /*
-     apr_status_t (*read)(sspdy_stream_t *stream, apr_size_t requested,
-     const char **data, apr_size_t *len);
-     */
+
     apr_status_t (*data_available)(sspdy_protocol_t *proto,
-                                   sspdy_stream_t *wrapped);
+                                   serf_bucket_t *wrapped);
 
     apr_status_t (*queue_request)(sspdy_protocol_t *proto,
                                   sspdy_setup_request_func_t setup_request,
@@ -67,7 +64,7 @@ apr_status_t sspdy_proto_queue_request(sspdy_protocol_t *proto,
                                        sspdy_setup_request_func_t setup_request,
                                        void *setup_baton);
 apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
-                                        sspdy_stream_t *wrapped);
+                                        serf_bucket_t *wrapped);
 apr_status_t sspdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
                               const char **data, apr_size_t *len);
 

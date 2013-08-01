@@ -20,7 +20,8 @@
 #include <apr_pools.h>
 #include <apr_uri.h>
 
-#include "spdy_streams.h"
+#include "serf.h"
+#include "spdy_buckets.h"
 
 #define LOG 1
 
@@ -63,8 +64,5 @@ ssl_socket_read(void *baton, char *data, apr_size_t *len);
 
 apr_status_t
 ssl_socket_write(void *baton, const char *data, apr_size_t *len);
-
-apr_status_t test(sspdy_stream_t *stream, apr_pool_t *pool);
-
 
 #endif

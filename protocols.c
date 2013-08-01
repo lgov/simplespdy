@@ -17,7 +17,7 @@
 
 
 apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
-                                        sspdy_stream_t *wrapped)
+                                        serf_bucket_t *wrapped)
 {
     return proto->type->data_available(proto, wrapped);
 }
