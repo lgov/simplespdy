@@ -50,8 +50,8 @@ struct sspdy_protocol_type_t {
      apr_status_t (*read)(sspdy_stream_t *stream, apr_size_t requested,
      const char **data, apr_size_t *len);
      */
-    apr_status_t (*data_available)(sspdy_protocol_t *proto, const char *data,
-                                   apr_size_t len);
+    apr_status_t (*data_available)(sspdy_protocol_t *proto,
+                                   sspdy_stream_t *wrapped);
 
     apr_status_t (*queue_request)(sspdy_protocol_t *proto,
                                   sspdy_setup_request_func_t setup_request,
@@ -67,7 +67,7 @@ apr_status_t sspdy_proto_queue_request(sspdy_protocol_t *proto,
                                        sspdy_setup_request_func_t setup_request,
                                        void *setup_baton);
 apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
-                                        const char *data, apr_size_t len);
+                                        sspdy_stream_t *wrapped);
 apr_status_t sspdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
                               const char **data, apr_size_t *len);
 

@@ -78,11 +78,12 @@ apr_status_t sspdy_create_spdy_out_syn_stream(sspdy_stream_t **stream,
 /* SPDY IN/DATA */
 extern const sspdy_stream_type_t sspdy_stream_type_spdy_in_data;
 apr_status_t
-sspdy_create_spdy_in_data_stream(sspdy_stream_t **stream,
-                                 sspdy_stream_t *wrapped,
-                                 sspdy_data_frame_t *frame,
-                                 apr_pool_t *pool);
-void sspdy_spdy_in_data_set_input(sspdy_stream_t *stream,
-                                  sspdy_stream_t *new_input);
+sspdy_create_response_stream(sspdy_stream_t **stream,
+                             apr_pool_t *pool);
+void sspdy_response_feed_data(sspdy_stream_t *stream,
+                              sspdy_stream_t *wrapped);
+void sspdy_response_feed_frame(sspdy_stream_t *stream,                               
+                               sspdy_data_frame_t *frame,
+                               sspdy_stream_t *wrapped);
 
 #endif

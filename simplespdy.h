@@ -43,8 +43,11 @@ void sspdy__log_nopref(int verbose_flag, const char *fmt, ...);
 
 #define SSPDY_SPDY_PROTOCOL_ERROR (SSPDY_ERROR_START + 3)
 
+#define SSPDY_SPDY_FRAME_READ (SSPDY_ERROR_START + 4)
+
 #define SSPDY_READ_ERROR(status) ((status) \
                                  && !APR_STATUS_IS_EOF(status) \
+                                 && (status != SSPDY_SPDY_FRAME_READ) \
                                  && !APR_STATUS_IS_EAGAIN(status) \
                                  && (status != SSPDY_SSL_WANTS_READ))
 

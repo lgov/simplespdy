@@ -17,9 +17,9 @@
 
 
 apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
-                                        const char *data, apr_size_t len)
+                                        sspdy_stream_t *wrapped)
 {
-    return proto->type->data_available(proto, data, len);
+    return proto->type->data_available(proto, wrapped);
 }
 
 apr_status_t sspdy_proto_queue_request(sspdy_protocol_t *proto,

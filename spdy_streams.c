@@ -208,22 +208,17 @@ typedef struct spdy_data_ctx_t {
     sspdy_data_frame_t *frame;
     apr_pool_t *pool;
     sspdy_stream_t *wrapped;
-    apr_uint32_t available;
+    apr_uint32_t remaining;
 } spdy_data_ctx_t;
 
 apr_status_t
-sspdy_create_spdy_in_data_stream(sspdy_stream_t **stream,
-                                 sspdy_stream_t *wrapped,
-                                 sspdy_data_frame_t *frame,
-                                 apr_pool_t *pool)
+sspdy_create_response_stream(sspdy_stream_t **stream,
+                             apr_pool_t *pool)
 {
     spdy_data_ctx_t *ctx;
     apr_status_t status;
 
     ctx = apr_pcalloc(pool, sizeof(spdy_data_ctx_t));
-    ctx->frame = frame;
-    ctx->available = frame->hdr.length;
-    ctx->wrapped = wrapped;
     ctx->pool = pool;
 
     *stream = apr_palloc(pool, sizeof(sspdy_stream_t));
@@ -240,22 +235,48 @@ apr_status_t sspdy_spdy_in_data_read(sspdy_stream_t *stream,
     spdy_data_ctx_t *ctx = stream->data;
     apr_status_t status;
 
+    if (!ctx->wrapped)
+        return APR_EOF;
+
     STATUSREADERR(sspdy_stream_read(ctx->wrapped, requested, data, len));
 
     if (*len)
-        ctx->available -= *len;
+        ctx->remaining -= *len;
 
-    sspdy__log(LOG, __FILE__, "data frame: %d bytes remaining\n", ctx->available);
+    sspdy__log(LOG, __FILE__, "data frame: %d bytes remaining\n", ctx->remaining);
 
+    if (status == APR_EOF) {
+        if (ctx->remaining)
+            return APR_EAGAIN;
+        else {
+            if (ctx->frame->hdr.flags & SSPDY_FLAG_HDR_FLAG_FIN) {
+                return APR_EOF;
+            } else {
+                return SSPDY_SPDY_FRAME_READ;
+            }
+        }
+    }
     return status;
 }
 
-void sspdy_spdy_in_data_set_input(sspdy_stream_t *stream,
-                                  sspdy_stream_t *new_input)
+void sspdy_response_feed_data(sspdy_stream_t *stream,
+                              sspdy_stream_t *wrapped)
 {
     spdy_data_ctx_t *ctx = stream->data;
 
-    ctx->wrapped = new_input;
+    ctx->wrapped = wrapped;
+}
+
+void sspdy_response_feed_frame(sspdy_stream_t *stream,
+                               sspdy_data_frame_t *frame,
+                               sspdy_stream_t *wrapped)
+{
+    spdy_data_ctx_t *ctx = stream->data;
+
+    ctx->frame = frame;
+    ctx->remaining = frame->hdr.length;
+
+    sspdy_response_feed_data(stream, wrapped);
 }
 
 const sspdy_stream_type_t sspdy_stream_type_spdy_in_data = {

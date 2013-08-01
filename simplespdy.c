@@ -74,8 +74,14 @@ apr_status_t run_loop(sspdy_context_t *sspdy_ctx, apr_pool_t *pool)
                         goto cleanup;
 
                     if (len) {
+                        sspdy_stream_t *wrapped;
+
+                        STATUSERR(sspdy_create_simple_stream(&wrapped,
+                                                             data,
+                                                             len,
+                                                             pool));
                         STATUSERR(sspdy_proto_data_available(sspdy_ctx->proto,
-                                                             data, len));
+                                                             wrapped));
                     }
 
                     if (status == APR_EAGAIN)
@@ -167,7 +173,7 @@ apr_status_t handle_response(void *baton, sspdy_stream_t *stream)
 
         sspdy__log(LOG, __FILE__, "Read response, %d bytes:\n%.*s\n----\n", len, len, data);
 
-        if (status == APR_EOF)
+        if (status == APR_EOF || status == APR_EAGAIN || status == SSPDY_SPDY_FRAME_READ)
             break;
     }
 

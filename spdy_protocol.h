@@ -128,9 +128,11 @@ struct spdy_proto_ctx_t
     apr_pool_t *pool;
 
     sspdy_config_store_t *config_store;
-
+/*
     struct iovec vec[16];
     size_t vec_len;
+    apr_size_t in_iov_pos;
+*/
 
     /* priority request queue */
     spdy_request_t *req;
@@ -138,16 +140,12 @@ struct spdy_proto_ctx_t
     /* incoming frames queue */
     spdy_frame_hdr_t *current_frame;
     sspdy_stream_t *current_stream;
-    apr_size_t processed_data;
 
-    /*    const char *in_data;*/
+    char hdr_data[8];
     apr_size_t available;
     apr_size_t in_cur_pos;
-    apr_size_t in_iov_pos;
 
     compress_ctx_t *z_ctx;
-
-    const char *frame_buf;
 
     apr_uint32_t streamid;
 };
