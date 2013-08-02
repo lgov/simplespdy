@@ -20,5 +20,5 @@ typedef struct sspdy_protocol_t sspdy_protocol_t;
 /* TODO: shouldn't be shared */
 typedef struct spdy_proto_ctx_t spdy_proto_ctx_t;
 typedef struct sspdy_data_frame_t sspdy_data_frame_t;
-
+typedef struct spdy_frame_hdr_t spdy_frame_hdr_t;
 #endif

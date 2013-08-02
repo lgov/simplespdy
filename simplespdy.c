@@ -170,7 +170,7 @@ int main(void)
 {
     apr_pool_t *global_pool, *pool;
     apr_uri_t uri;
-    const char *url = "https://www.google.be";
+    const char *url = "https://lgo-ubuntu1";
     sspdy_context_t *sspdy_ctx;
     apr_size_t len;
     apr_status_t status;

@@ -21,7 +21,7 @@
 
 typedef struct compress_ctx_t compress_ctx_t;
 
-typedef struct spdy_frame_hdr_t {
+struct spdy_frame_hdr_t {
     apr_byte_t control;
     apr_byte_t flags;
     apr_uint32_t length;
@@ -34,7 +34,7 @@ typedef struct spdy_frame_hdr_t {
             apr_uint32_t streamid;
         } data;
     };
-} spdy_frame_hdr_t;
+};
 
 
 /* A large frame can probably not be read in one move, so we have to keep track
@@ -152,7 +152,7 @@ struct spdy_proto_ctx_t
 
 typedef enum {
     SPDY_CTRL_SYN_STREAM = 1,
-    SPDY_CTRL_REPLY      = 2,
+    SPDY_CTRL_SYN_REPLY  = 2,
     SPDY_CTRL_RST_STREAM = 3,
     SPDY_CTRL_SETTINGS   = 4,
     SPDY_CTRL_GOAWAY     = 7,

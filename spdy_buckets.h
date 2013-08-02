@@ -54,7 +54,7 @@ sspdy_create_response_bucket(serf_bucket_t **bkt,
 void sspdy_response_feed_data(serf_bucket_t *bkt,
                               serf_bucket_t *wrapped);
 void sspdy_response_feed_frame(serf_bucket_t *bkt,
-                               sspdy_data_frame_t *frame,
+                               spdy_frame_hdr_t *hdr,
                                serf_bucket_t *wrapped);
 
 #endif

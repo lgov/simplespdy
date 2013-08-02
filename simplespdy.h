@@ -57,12 +57,4 @@ void sspdy__log_nopref(int verbose_flag, const char *fmt, ...);
 #define STATUSREADERR(x) if (((status = (x)) && SSPDY_READ_ERROR(status)))\
                            return status;
 
-/* SPDY protocol */
-
-apr_status_t
-ssl_socket_read(void *baton, char *data, apr_size_t *len);
-
-apr_status_t
-ssl_socket_write(void *baton, const char *data, apr_size_t *len);
-
 #endif

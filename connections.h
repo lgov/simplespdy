@@ -72,4 +72,11 @@ apr_status_t sspdy_create_tls_connection(sspdy_connection_t **,
                                          const char *hostname, apr_port_t port,
                                          apr_pool_t *pool);
 
+apr_status_t
+ssl_socket_read(void *baton, char *data, apr_size_t *len);
+
+apr_status_t
+ssl_socket_write(void *baton, const char *data, apr_size_t *len);
+
+
 #endif

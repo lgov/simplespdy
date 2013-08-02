@@ -97,7 +97,7 @@ create_compressed_header_block(spdy_syn_bucket_ctx_t *ctx, const char **data,
         { ":method", "GET" },
         { ":path", "/" },
         { ":version", "HTTP/1.1" },
-        { ":host", "www.google.be" },
+        { ":host", "lgo-ubuntu1" },
         { ":scheme", "https" },
     };
 
@@ -268,13 +268,16 @@ void sspdy_response_feed_data(serf_bucket_t *bkt,
 }
 
 void sspdy_response_feed_frame(serf_bucket_t *bkt,
-                               sspdy_data_frame_t *frame,
+                               spdy_frame_hdr_t *hdr,
                                serf_bucket_t *wrapped)
 {
     spdy_data_ctx_t *ctx = bkt->data;
 
-    ctx->frame = frame;
-    ctx->remaining = frame->hdr.length;
+    if (hdr->control == 0) {
+        sspdy_data_frame_t *frame = (sspdy_data_frame_t *)hdr;
+        ctx->frame = frame;
+        ctx->remaining = frame->hdr.length;
+    }
 
     sspdy_response_feed_data(bkt, wrapped);
 }
