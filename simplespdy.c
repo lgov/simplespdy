@@ -154,12 +154,13 @@ apr_status_t handle_response(void *baton, serf_bucket_t *response)
     return status;
 }
 
-apr_status_t setup_request(void *baton,
-                           sspdy_handle_response_func_t *response_handler,
-                           const char **data,
-                           apr_size_t *len)
+apr_status_t setup_request(sspdy_request_t *request,
+                           void *baton,
+                           sspdy_handle_response_func_t *response_handler)
 {
     *response_handler = handle_response;
+
+    sspdy_set_header(request, "", "");
 
     return APR_SUCCESS;
 }

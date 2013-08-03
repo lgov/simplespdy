@@ -36,13 +36,21 @@ struct sspdy_protocol_t {
 };
 
 typedef apr_status_t (*sspdy_handle_response_func_t)(void *baton,
-                                                     serf_bucket_t *response);
+                      serf_bucket_t *response);
+
+struct sspdy_request_t {
+    sspdy_handle_response_func_t handle_response;
+    void *setup_baton;
+    serf_bucket_alloc_t *bkt_alloc;
+    int priority;
+    int written;
+    serf_bucket_t *hdrs;
+};
 
 typedef apr_status_t
-(*sspdy_setup_request_func_t)(void *baton,
-                              sspdy_handle_response_func_t *handle_response,
-                              const char **data,
-                              apr_size_t *len);
+(*sspdy_setup_request_func_t)(sspdy_request_t *request,
+                              void *baton,
+                              sspdy_handle_response_func_t *handle_response);
 
 struct sspdy_protocol_type_t {
     const char *name;
@@ -60,6 +68,14 @@ struct sspdy_protocol_type_t {
     void (*destroy)(sspdy_protocol_t *proto);
 };
 
+apr_status_t
+sspdy_create_request(sspdy_request_t **out_request, int priority,
+                     void *setup_baton,
+                     apr_pool_t *pool);
+
+void
+sspdy_set_header(sspdy_request_t *request, const char *hdr, const char *value);
+
 apr_status_t sspdy_proto_queue_request(sspdy_protocol_t *proto,
                                        int priority,
                                        void *setup_baton);
@@ -73,12 +89,6 @@ apr_status_t sspdy_create_https_protocol(sspdy_protocol_t **,
                                          sspdy_config_store_t *config_store,
                                          apr_pool_t *pool);
 
-typedef struct spdy_request_t {
-    sspdy_handle_response_func_t handle_response;
-    void *setup_baton;
-    int priority;
-    int written;
-} spdy_request_t;
 
 /* SPDY protocol */
 

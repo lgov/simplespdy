@@ -19,8 +19,6 @@
 #include "protocols.h"
 #include "config_store.h"
 
-typedef struct compress_ctx_t compress_ctx_t;
-
 struct spdy_frame_hdr_t {
     apr_byte_t control;
     apr_byte_t flags;
@@ -83,7 +81,7 @@ typedef struct sspdy_goaway_frame_t {
     
 } sspdy_goaway_frame_t;
 
-struct sspdy_data_frame_t {
+struct spdy_data_frame_t {
     spdy_frame_hdr_t hdr;
 
     frame_read_state_t state;
@@ -132,7 +130,7 @@ struct spdy_proto_ctx_t
     sspdy_setup_request_func_t setup_request;
 
     /* priority request queue */
-    spdy_request_t *req;
+    sspdy_request_t *req;
 
     /* incoming frames queue */
     spdy_frame_hdr_t *current_frame;

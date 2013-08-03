@@ -34,3 +34,26 @@ apr_status_t sspdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
 {
     return proto->type->read(proto, requested, data, len);
 }
+
+apr_status_t
+sspdy_create_request(sspdy_request_t **out_request, int priority,
+                     void *setup_baton,
+                     apr_pool_t *pool)
+{
+    sspdy_request_t *request = apr_pcalloc(pool, sizeof(sspdy_request_t));
+
+    request->bkt_alloc = serf_bucket_allocator_create(pool, NULL, NULL);
+    request->hdrs = serf_bucket_headers_create(request->bkt_alloc);
+    request->priority = priority;
+    request->setup_baton = setup_baton;
+
+    *out_request = request;
+
+    return APR_SUCCESS;
+}
+
+void
+sspdy_set_header(sspdy_request_t *request, const char *hdr, const char *value)
+{
+    serf_bucket_headers_setn(request->hdrs, hdr, value);
+}

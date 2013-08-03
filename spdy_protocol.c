@@ -478,14 +478,14 @@ sspdy_spdy_proto_queue_request(sspdy_protocol_t *proto,
                                void *setup_baton)
 {
     spdy_proto_ctx_t *ctx = proto->data;
+    sspdy_request_t *request;
+    apr_status_t status;
 
-    spdy_request_t *req = apr_palloc(ctx->pool, sizeof(spdy_request_t));
-    req->setup_baton = setup_baton;
-    req->priority = priority;
-    req->written = 0;
+    STATUSERR(sspdy_create_request(&request, priority, setup_baton,
+                                   ctx->pool));
 
     /* Add to queue */
-    ctx->req = req;
+    ctx->req = request;
 
     return APR_SUCCESS;
 }
@@ -499,9 +499,9 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
     apr_status_t status;
 
     if (ctx->req && !ctx->req->written) {
-        ctx->setup_request(ctx->req->setup_baton,
-                           &ctx->req->handle_response,
-                           data, len);
+        ctx->setup_request(ctx->req,
+                           ctx->req->setup_baton,
+                           &ctx->req->handle_response);
         ctx->req->written = 1;
 
         /* create a SYN_STREAM frame */
