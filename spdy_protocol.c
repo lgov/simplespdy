@@ -463,6 +463,7 @@ sspdy_create_spdy_tls_protocol(sspdy_protocol_t **proto,
     ctx->setup_request = setup_request;
     ctx->streamid = 1; /* odd number for client-initiated streams */
     ctx->requests = sspdy_create_priority_queue(pool);
+    ctx->frames = sspdy_create_priority_queue(pool);
 
     STATUSERR(init_compression(&ctx->z_ctx, ctx->pool));
 
@@ -492,34 +493,58 @@ sspdy_spdy_proto_queue_request(sspdy_protocol_t *proto,
 }
 
 static apr_status_t
+prepare_request(sspdy_request_t **out_request, spdy_proto_ctx_t *ctx)
+{
+    sspdy_request_t *request;
+    serf_bucket_t *req_bkt;
+    apr_status_t status;
+    
+    request = (sspdy_request_t *)sspdy_priority_queue_remove_top(ctx->requests);
+
+    if (!request)
+        return APR_EOF;
+
+    ctx->setup_request(request,
+                       request->setup_baton,
+                       &request->handle_response);
+
+    /* create a SYN_STREAM frame */
+    STATUSERR(sspdy_create_spdy_out_syn_bucket(&req_bkt, ctx,
+                                               request, ctx->pool));
+    /* TODO: pq that maintains insert order! */
+    sspdy_priority_queue_insert(ctx->frames, req_bkt, request->priority);
+
+    *out_request = request;
+    
+    return APR_SUCCESS;
+}
+
+static apr_status_t
 sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
                       const char **data, apr_size_t *len)
 {
     spdy_proto_ctx_t *ctx = proto->data;
-    serf_bucket_t *req_bkt;
     apr_status_t status;
 
-    if (!ctx->req)
-        ctx->req = (sspdy_request_t *)sspdy_priority_queue_remove_top(ctx->requests);
-
     if (ctx->req && !ctx->req->written) {
-        ctx->setup_request(ctx->req,
-                           ctx->req->setup_baton,
-                           &ctx->req->handle_response);
-        ctx->req->written = 1;
+        /* continue writing request */
+    } else {
+        sspdy_request_t *request;
+        serf_bucket_t *req_bkt;
 
-        /* create a SYN_STREAM frame */
-        STATUSERR(sspdy_create_spdy_out_syn_bucket(&req_bkt, ctx,
-                                                   ctx->req, ctx->pool));
-        /* create a DATA frame */
+        status = prepare_request(&request, ctx);
+        if (status) {
+            *len = 0;
+            return status;
+        }
+        /* Move to in progress/sent queue */
+        ctx->req = request;
 
-
+        req_bkt = (serf_bucket_t *)sspdy_priority_queue_remove_top(ctx->frames);
         status = serf_bucket_read(req_bkt, requested, data, len);
 
-        return status;
+        ctx->req->written = 1;
     }
-
-    *len = 0;
 
     return APR_EOF;
 }

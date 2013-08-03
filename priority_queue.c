@@ -85,6 +85,9 @@ const void *sspdy_priority_queue_remove_top(sspdy_priority_queue_t *pqueue)
     void *element = res_el->element;
     int cur;
 
+    if (pqueue->nelts == 0)
+        return NULL;
+
     /* move the last leaf to the top */
     memcpy(&pqueue->elements[1], &pqueue->elements[pqueue->nelts],
            sizeof(heap_element_t));
