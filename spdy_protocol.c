@@ -462,6 +462,7 @@ sspdy_create_spdy_tls_protocol(sspdy_protocol_t **proto,
     ctx->config_store = config_store;
     ctx->setup_request = setup_request;
     ctx->streamid = 1; /* odd number for client-initiated streams */
+    ctx->pq = sspdy_create_priority_queue(pool);
 
     STATUSERR(init_compression(&ctx->z_ctx, ctx->pool));
 
@@ -485,7 +486,7 @@ sspdy_spdy_proto_queue_request(sspdy_protocol_t *proto,
                                    ctx->pool));
 
     /* Add to queue */
-    ctx->req = request;
+    sspdy_priority_queue_insert(ctx->pq, request, request->priority);
 
     return APR_SUCCESS;
 }
@@ -497,6 +498,9 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
     spdy_proto_ctx_t *ctx = proto->data;
     serf_bucket_t *req_bkt;
     apr_status_t status;
+
+    if (!ctx->req)
+        ctx->req = (sspdy_request_t *)sspdy_priority_queue_remove_top(ctx->pq);
 
     if (ctx->req && !ctx->req->written) {
         ctx->setup_request(ctx->req,

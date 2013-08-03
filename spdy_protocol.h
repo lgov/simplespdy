@@ -18,6 +18,7 @@
 
 #include "protocols.h"
 #include "config_store.h"
+#include "priority_queue.h"
 
 struct spdy_frame_hdr_t {
     apr_byte_t control;
@@ -130,6 +131,7 @@ struct spdy_proto_ctx_t
     sspdy_setup_request_func_t setup_request;
 
     /* priority request queue */
+    sspdy_priority_queue_t *pq;
     sspdy_request_t *req;
 
     /* incoming frames queue */

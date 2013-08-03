@@ -19,15 +19,16 @@
 #include <apr.h>
 #include <apr_pools.h>
 
-typedef struct sspdy_heap_t sspdy_heap_t;
+typedef struct sspdy_priority_queue_t sspdy_priority_queue_t;
 
-sspdy_heap_t *sspdy_create_heap(apr_pool_t *pool);
+sspdy_priority_queue_t *sspdy_create_priority_queue(apr_pool_t *pool);
 
 /* lower = higher priority */
-void sspdy_heap_insert(sspdy_heap_t *heap, void *element, int priority);
+void
+sspdy_priority_queue_insert(sspdy_priority_queue_t *pqueue, void *element, int priority);
 
-const void * sspdy_heap_remove_top(sspdy_heap_t *heap);
+const void * sspdy_priority_queue_remove_top(sspdy_priority_queue_t *pqueue);
 
-void log_heap(sspdy_heap_t *heap);
+void log_heap(sspdy_priority_queue_t *pqueue);
 
 #endif
