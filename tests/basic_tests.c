@@ -101,23 +101,23 @@ CTEST2(heap, test4)
     const char *str;
 
     /* add in random order */
-    sspdy_heap_t *heap = sspdy_create_heap(data->test_pool);
-    sspdy_heap_insert(heap, str4, 4);
-    sspdy_heap_insert(heap, str1, 1);
-    sspdy_heap_insert(heap, str3, 3);
-    sspdy_heap_insert(heap, str2, 2);
+    sspdy_heap_t *heap = sspdy_create_priority_queue(data->test_pool);
+    sspdy_priority_queue_insert(heap, str4, 4);
+    sspdy_priority_queue_insert(heap, str1, 1);
+    sspdy_priority_queue_insert(heap, str3, 3);
+    sspdy_priority_queue_insert(heap, str2, 2);
 
     log_heap(heap);
-    str = (const char *)sspdy_heap_remove_top(heap);
+    str = (const char *)sspdy_priority_queue_remove_top(heap);
     ASSERT_STR(str1, str);
     log_heap(heap);
-    str = (const char *)sspdy_heap_remove_top(heap);
+    str = (const char *)sspdy_priority_queue_remove_top(heap);
     ASSERT_STR(str2, str);
     log_heap(heap);
-    str = (const char *)sspdy_heap_remove_top(heap);
+    str = (const char *)sspdy_priority_queue_remove_top(heap);
     ASSERT_STR(str3, str);
     log_heap(heap);
-    str = (const char *)sspdy_heap_remove_top(heap);
+    str = (const char *)sspdy_priority_queue_remove_top(heap);
     ASSERT_STR(str4, str);
     log_heap(heap);
 }
