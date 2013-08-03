@@ -128,11 +128,8 @@ struct spdy_proto_ctx_t
     apr_pool_t *pool;
 
     sspdy_config_store_t *config_store;
-/*
-    struct iovec vec[16];
-    size_t vec_len;
-    apr_size_t in_iov_pos;
-*/
+
+    sspdy_setup_request_func_t setup_request;
 
     /* priority request queue */
     spdy_request_t *req;
@@ -178,9 +175,11 @@ typedef struct hdr_val_pair_t {
     const char *val;
 } hdr_val_pair_t;
 
-apr_status_t sspdy_create_spdy_tls_protocol(sspdy_protocol_t **,
-                                            sspdy_config_store_t *config_store,
-                                            apr_pool_t *pool);
+apr_status_t
+sspdy_create_spdy_tls_protocol(sspdy_protocol_t **,
+                               sspdy_config_store_t *config_store,
+                               sspdy_setup_request_func_t setup_request,
+                               apr_pool_t *pool);
 
 extern const sspdy_protocol_type_t sspdy_protocol_type_spdy;
 

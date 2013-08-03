@@ -51,7 +51,7 @@ struct sspdy_protocol_type_t {
                                    serf_bucket_t *wrapped);
 
     apr_status_t (*queue_request)(sspdy_protocol_t *proto,
-                                  sspdy_setup_request_func_t setup_request,
+                                  int priority,
                                   void *setup_baton);
 
     apr_status_t (*read)(sspdy_protocol_t *proto, apr_size_t requested,
@@ -61,7 +61,7 @@ struct sspdy_protocol_type_t {
 };
 
 apr_status_t sspdy_proto_queue_request(sspdy_protocol_t *proto,
-                                       sspdy_setup_request_func_t setup_request,
+                                       int priority,
                                        void *setup_baton);
 apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
                                         serf_bucket_t *wrapped);
@@ -74,9 +74,9 @@ apr_status_t sspdy_create_https_protocol(sspdy_protocol_t **,
                                          apr_pool_t *pool);
 
 typedef struct spdy_request_t {
-    sspdy_setup_request_func_t setup_request;
     sspdy_handle_response_func_t handle_response;
     void *setup_baton;
+    int priority;
     int written;
 } spdy_request_t;
 

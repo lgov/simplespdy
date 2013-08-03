@@ -23,10 +23,10 @@ apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
 }
 
 apr_status_t sspdy_proto_queue_request(sspdy_protocol_t *proto,
-                                       sspdy_setup_request_func_t setup_request,
+                                       int priority,
                                        void *setup_baton)
 {
-    return proto->type->queue_request(proto, setup_request, setup_baton);
+    return proto->type->queue_request(proto, priority, setup_baton);
 }
 
 apr_status_t sspdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,

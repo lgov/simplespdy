@@ -451,6 +451,7 @@ read_spdy_frame(spdy_proto_ctx_t *ctx, spdy_frame_hdr_t *hdr,
 apr_status_t
 sspdy_create_spdy_tls_protocol(sspdy_protocol_t **proto,
                                sspdy_config_store_t *config_store,
+                               sspdy_setup_request_func_t setup_request,
                                apr_pool_t *pool)
 {
     spdy_proto_ctx_t *ctx;
@@ -459,6 +460,7 @@ sspdy_create_spdy_tls_protocol(sspdy_protocol_t **proto,
     ctx = apr_pcalloc(pool, sizeof(spdy_proto_ctx_t));
     ctx->pool = pool;
     ctx->config_store = config_store;
+    ctx->setup_request = setup_request;
     ctx->streamid = 1; /* odd number for client-initiated streams */
 
     STATUSERR(init_compression(&ctx->z_ctx, ctx->pool));
@@ -472,14 +474,14 @@ sspdy_create_spdy_tls_protocol(sspdy_protocol_t **proto,
 
 apr_status_t
 sspdy_spdy_proto_queue_request(sspdy_protocol_t *proto,
-                               sspdy_setup_request_func_t setup_request,
+                               int priority,
                                void *setup_baton)
 {
     spdy_proto_ctx_t *ctx = proto->data;
 
     spdy_request_t *req = apr_palloc(ctx->pool, sizeof(spdy_request_t));
     req->setup_baton = setup_baton;
-    req->setup_request = setup_request;
+    req->priority = priority;
     req->written = 0;
 
     /* Add to queue */
@@ -497,9 +499,9 @@ sspdy_spdy_proto_read(sspdy_protocol_t *proto, apr_size_t requested,
     apr_status_t status;
 
     if (ctx->req && !ctx->req->written) {
-        ctx->req->setup_request(ctx->req->setup_baton,
-                                &ctx->req->handle_response,
-                                data, len);
+        ctx->setup_request(ctx->req->setup_baton,
+                           &ctx->req->handle_response,
+                           data, len);
         ctx->req->written = 1;
 
         /* create a SYN_STREAM frame */

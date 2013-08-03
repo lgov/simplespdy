@@ -174,6 +174,11 @@ int main(void)
     sspdy_context_t *sspdy_ctx;
     apr_size_t len;
     apr_status_t status;
+    enum priority_t {
+        PRIORITY_HIGH = 1,
+        PRIORITY_NORMAL = 3,
+        PRIORITY_LOW = 7,
+    };
 
     /* Initialize the Apache portable runtime library. */
     apr_initialize();
@@ -199,9 +204,10 @@ int main(void)
 
     STATUSERR(sspdy_create_spdy_tls_protocol(&sspdy_ctx->proto,
                                              sspdy_ctx->config_store,
+                                             setup_request,
                                              pool));
 
-    STATUSERR(sspdy_proto_queue_request(sspdy_ctx->proto, setup_request,
+    STATUSERR(sspdy_proto_queue_request(sspdy_ctx->proto, PRIORITY_NORMAL,
                                         sspdy_ctx));
 
     while (1) {
