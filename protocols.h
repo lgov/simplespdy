@@ -42,9 +42,10 @@ struct sspdy_request_t {
     sspdy_handle_response_func_t handle_response;
     void *setup_baton;
     serf_bucket_alloc_t *bkt_alloc;
+    apr_pool_t *pool;
     int priority;
     int written;
-    serf_bucket_t *hdrs;
+    apr_hash_t *hdrs;
 };
 
 typedef apr_status_t

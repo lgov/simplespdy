@@ -15,6 +15,7 @@
 
 #include "protocols.h"
 
+#include <apr_strings.h>
 
 apr_status_t sspdy_proto_data_available(sspdy_protocol_t *proto,
                                         serf_bucket_t *wrapped)
@@ -41,9 +42,9 @@ sspdy_create_request(sspdy_request_t **out_request, int priority,
                      apr_pool_t *pool)
 {
     sspdy_request_t *request = apr_pcalloc(pool, sizeof(sspdy_request_t));
-
+    request->pool = pool;
     request->bkt_alloc = serf_bucket_allocator_create(pool, NULL, NULL);
-    request->hdrs = serf_bucket_headers_create(request->bkt_alloc);
+    request->hdrs = apr_hash_make(pool);
     request->priority = priority;
     request->setup_baton = setup_baton;
 
@@ -55,5 +56,8 @@ sspdy_create_request(sspdy_request_t **out_request, int priority,
 void
 sspdy_set_header(sspdy_request_t *request, const char *hdr, const char *value)
 {
-    serf_bucket_headers_setn(request->hdrs, hdr, value);
+    apr_hash_t *hdrs = request->hdrs;
+
+    apr_hash_set(request->hdrs, hdr, APR_HASH_KEY_STRING,
+                 apr_pstrdup(request->pool, value));
 }

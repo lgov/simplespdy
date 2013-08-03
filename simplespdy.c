@@ -160,7 +160,11 @@ apr_status_t setup_request(sspdy_request_t *request,
 {
     *response_handler = handle_response;
 
-    sspdy_set_header(request, "", "");
+    sspdy_set_header(request, ":method", "GET");
+    sspdy_set_header(request, ":path", "/");
+    sspdy_set_header(request, ":version", "HTTP/1.1");
+    sspdy_set_header(request, ":host", "lgo-ubuntu1");
+    sspdy_set_header(request, ":scheme", "https");
 
     return APR_SUCCESS;
 }

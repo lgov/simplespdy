@@ -43,7 +43,7 @@ extern const serf_bucket_type_t serf_bucket_type_out_syn;
 
 apr_status_t sspdy_create_spdy_out_syn_bucket(serf_bucket_t **bkt,
                                               spdy_proto_ctx_t *spdy_ctx,
-                                              apr_hash_t *hdrs,
+                                              sspdy_request_t *request,
                                               apr_pool_t *pool);
 
 /* SPDY IN/DATA */

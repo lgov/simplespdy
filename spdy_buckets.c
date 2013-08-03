@@ -50,7 +50,7 @@ next_streamid(apr_uint32_t *streamid, spdy_proto_ctx_t *ctx)
 
 typedef struct spdy_syn_bucket_ctx_t {
     spdy_proto_ctx_t *spdy_ctx;
-    apr_hash_t *hdrs;
+    sspdy_request_t *request;
     apr_pool_t *pool;
     char *out_data;
     apr_size_t out_cur_pos;
@@ -60,7 +60,7 @@ typedef struct spdy_syn_bucket_ctx_t {
 apr_status_t
 sspdy_create_spdy_out_syn_bucket(serf_bucket_t **bkt,
                                  spdy_proto_ctx_t *spdy_ctx,
-                                 apr_hash_t *hdrs,
+                                 sspdy_request_t *request,
                                  apr_pool_t *pool)
 {
     spdy_syn_bucket_ctx_t *ctx;
@@ -68,7 +68,7 @@ sspdy_create_spdy_out_syn_bucket(serf_bucket_t **bkt,
 
     ctx = apr_pcalloc(pool, sizeof(spdy_syn_bucket_ctx_t));
     ctx->spdy_ctx = spdy_ctx;
-    ctx->hdrs = hdrs;
+    ctx->request = request;
     ctx->out_data = apr_palloc(pool, BUFSIZE);
     ctx->pool = pool;
     STATUSERR(init_compression(&ctx->z_ctx, ctx->pool));
@@ -78,6 +78,27 @@ sspdy_create_spdy_out_syn_bucket(serf_bucket_t **bkt,
     (*bkt)->data = ctx;
 
     return APR_SUCCESS;
+}
+
+static int
+write_header(void *rec, const void *key, apr_ssize_t klen, const void *value)
+{
+    const char **ap = rec;
+    char *p = *ap;
+    apr_uint32_t length;
+
+    WRITE_INT32(p, (apr_int32_t)klen);
+    memcpy(p, key, klen);
+    p += klen;
+
+    length = strlen((const char*) value);
+    WRITE_INT32(p, length);
+    memcpy(p, value, length);
+    p += length;
+
+    *ap = p;
+
+    return 1;
 }
 
 static apr_status_t
@@ -93,30 +114,13 @@ create_compressed_header_block(spdy_syn_bucket_ctx_t *ctx, const char **data,
     apr_status_t status;
     int i;
 
-    hdr_val_pair_t headers[] = {
-        { ":method", "GET" },
-        { ":path", "/" },
-        { ":version", "HTTP/1.1" },
-        { ":host", "lgo-ubuntu1" },
-        { ":scheme", "https" },
-    };
+    apr_hash_t *hdrs = ctx->request->hdrs;
 
-    nr_of_hdrs = sizeof(headers) / sizeof(headers[0]);
+    nr_of_hdrs = apr_hash_count(hdrs);
+
     WRITE_INT32(p, nr_of_hdrs);
 
-    for (i = 0; i < nr_of_hdrs; i++) {
-        apr_uint32_t length;
-
-        length = strlen(headers[i].hdr);
-        WRITE_INT32(p, length);
-        memcpy(p, headers[i].hdr, length);
-        p += length;
-
-        length = strlen(headers[i].val);
-        WRITE_INT32(p, length);
-        memcpy(p, headers[i].val, length);
-        p += length;
-    }
+    apr_hash_do(write_header, &p, hdrs);
 
     uncomp_len = p - buf;
 

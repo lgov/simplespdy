@@ -130,8 +130,12 @@ struct spdy_proto_ctx_t
 
     sspdy_setup_request_func_t setup_request;
 
-    /* priority request queue */
-    sspdy_priority_queue_t *pq;
+    /* priority request queue (contains sspdy_request_t *) */
+    sspdy_priority_queue_t *requests;
+
+    /* priority frame queue (contains serf_bucket_t *) */
+    sspdy_priority_queue_t *frames;
+
     sspdy_request_t *req;
 
     /* incoming frames queue */
